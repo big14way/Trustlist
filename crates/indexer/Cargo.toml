@@ -5,7 +5,14 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# alloy is the spec-mandated chain client: typed sol! bindings, no hand
+# written log decoding.
+alloy = { version = "1", features = ["providers", "rpc-types", "sol-types", "transports", "reqwest"] }
 anyhow.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 common = { path = "../common" }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2"] }
+sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+url = "2"

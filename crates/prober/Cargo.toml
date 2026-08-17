@@ -6,6 +6,14 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 common = { path = "../common" }
+# governor is the spec-mandated outbound rate limiter.
+governor = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2"] }
+serde_json.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+url = "2"

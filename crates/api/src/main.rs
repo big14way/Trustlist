@@ -1,19 +1,18 @@
-//! TrustList REST API. M0 serves health only; feature routes arrive with
-//! their milestones (agents and stats in M1, snapshots in M6, hire in M3).
+//! TrustList REST API. M1 serves health, agents, and stats. Scores, jobs,
+//! snapshots, and SSE arrive with their milestones.
 
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+mod routes;
+
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Router;
 use common::config::Config;
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
-struct AppState {
-    pool: PgPool,
+pub struct AppState {
+    pub pool: PgPool,
 }
 
 #[tokio::main]
@@ -23,7 +22,10 @@ async fn main() -> anyhow::Result<()> {
     let pool = common::connect_and_migrate(&config.database_url).await?;
 
     let app = Router::new()
-        .route("/v1/health", get(health))
+        .route("/v1/health", get(routes::health))
+        .route("/v1/agents", get(routes::list_agents))
+        .route("/v1/agents/{id}", get(routes::get_agent))
+        .route("/v1/stats", get(routes::stats))
         .with_state(AppState { pool })
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());
@@ -33,20 +35,4 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
-}
-
-async fn health(State(state): State<AppState>) -> impl IntoResponse {
-    let db_ok = sqlx::query("select 1").execute(&state.pool).await.is_ok();
-    let status = if db_ok {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
-    (
-        status,
-        Json(serde_json::json!({
-            "status": if db_ok { "ok" } else { "degraded" },
-            "db": db_ok,
-        })),
-    )
 }
