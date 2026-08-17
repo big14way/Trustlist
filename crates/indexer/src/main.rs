@@ -68,10 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
     loop {
         let head = match ingestor.provider.get_block_number().await {
-            Ok(h) => {
-                consecutive_failures = 0;
-                h.saturating_sub(CONFIRM_DEPTH)
-            }
+            Ok(h) => h.saturating_sub(CONFIRM_DEPTH),
             Err(e) => {
                 consecutive_failures += 1;
                 tracing::warn!(%e, consecutive_failures, "head fetch failed");
@@ -93,28 +90,60 @@ async fn main() -> anyhow::Result<()> {
         };
 
         let mut all_caught_up = true;
+        let mut had_error = false;
         for (i, (registry, addr, _)) in targets.iter().enumerate() {
             if next[i] > head {
                 continue;
             }
             all_caught_up = false;
             // Reorg check only matters near head, where our stored boundary
-            // hash could have been replaced.
+            // hash could have been replaced. Transient failures must never
+            // kill the process; log, back off, and resume from saved state.
             if head.saturating_sub(next[i]) < 1_000 {
-                if let Some(rewind) = ingestor.check_reorg(*addr).await? {
-                    tracing::warn!(
-                        registry = registry.name(),
-                        rewind,
-                        "reorg detected, rewinding"
-                    );
-                    next[i] = rewind;
+                match ingestor.check_reorg(*addr).await {
+                    Ok(Some(rewind)) => {
+                        tracing::warn!(
+                            registry = registry.name(),
+                            rewind,
+                            "reorg detected, rewinding"
+                        );
+                        next[i] = rewind;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!(registry = registry.name(), %e, "reorg check failed");
+                        had_error = true;
+                        continue;
+                    }
                 }
             }
-            next[i] = ingestor
-                .ingest_chunk(*registry, *addr, next[i], head)
-                .await?;
+            match ingestor.ingest_chunk(*registry, *addr, next[i], head).await {
+                Ok(n) => next[i] = n,
+                Err(e) => {
+                    tracing::warn!(registry = registry.name(), %e, "chunk ingest failed");
+                    had_error = true;
+                }
+            }
         }
 
+        if had_error {
+            consecutive_failures += 1;
+            if consecutive_failures >= 5 {
+                if let Some(fb) = &fallback {
+                    on_fallback = !on_fallback;
+                    tracing::warn!(on_fallback, "switching rpc provider after ingest errors");
+                    ingestor.provider = if on_fallback {
+                        fb.clone()
+                    } else {
+                        primary.clone()
+                    };
+                    consecutive_failures = 0;
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        } else {
+            consecutive_failures = 0;
+        }
         if all_caught_up {
             tokio::time::sleep(Duration::from_secs(10)).await;
         }
