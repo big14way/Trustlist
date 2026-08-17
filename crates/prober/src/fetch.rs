@@ -43,7 +43,6 @@ impl FailureKind {
 pub struct FetchResult {
     pub status: u16,
     pub body: Vec<u8>,
-    pub latency_ms: i32,
 }
 
 /// True when the address must never be contacted: loopback, private ranges,
@@ -123,7 +122,6 @@ fn classify(e: &reqwest::Error) -> FailureKind {
 /// is returned as Ok; transport failures come back as Err(kind).
 pub async fn guarded_get(client: &reqwest::Client, url: &str) -> Result<FetchResult, FailureKind> {
     let mut current: Url = url.parse().map_err(|_| FailureKind::BadUrl)?;
-    let started = std::time::Instant::now();
     for _ in 0..=MAX_REDIRECTS {
         guard_url(&current).await?;
         let resp = client
@@ -153,7 +151,6 @@ pub async fn guarded_get(client: &reqwest::Client, url: &str) -> Result<FetchRes
         return Ok(FetchResult {
             status: status.as_u16(),
             body,
-            latency_ms: started.elapsed().as_millis() as i32,
         });
     }
     Err(FailureKind::TooManyRedirects)
