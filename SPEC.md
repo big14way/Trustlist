@@ -37,9 +37,9 @@ House rules that apply to every file the agent writes, including comments, commi
 
 ## 1. Mission in one paragraph
 
-Roughly 200,000 agents are registered on BNB Smart Chain under ERC-8004, and almost none of them work. Independent measurement puts live, reachable service endpoints on BSC at about 4 percent of registrations, and after stripping coordinated Sybil feedback, close to 78 percent of rated agents on BSC are left with no trustworthy review at all. So the registry is technically a marketplace and practically a graveyard. TrustList is the marketplace that fixes the ranking problem: it probes every agent continuously, weights reputation by how independent the reviewer actually is, hides the dead majority by default, and turns "I found an agent" into "I hired it and it got paid" in two clicks using ERC-8183 escrow, x402 payments, and Altana session wallets with hard on-chain spend caps.
+Roughly 269,000 agents are registered on BNB Smart Chain under ERC-8004 (269,234 read from chain on 17 August 2026; every number in UI copy derives from our own chain reads, never from this paragraph), and almost none of them work. Independent measurement (arXiv:2606.26028v2, data through 13 May 2026, when BSC had 90,145 registrations) puts live, reachable service endpoints on BSC at about 4 percent of registrations, and after stripping coordinated Sybil feedback, close to 78 percent of rated agents on BSC are left with no trustworthy review at all. The registry has roughly tripled since that measurement, and bulk registrations skew toward placeholders, so today's live share is probably lower than 4 percent. We measure it ourselves and lead with our own number. So the registry is technically a marketplace and practically a graveyard. TrustList is the marketplace that fixes the ranking problem: it probes every agent continuously, weights reputation by how independent the reviewer actually is, hides the dead majority by default, and turns "I found an agent" into "I hired it and it got paid" in two clicks using ERC-8183 escrow, x402 payments, and Altana session wallets with hard on-chain spend caps.
 
-The one sentence we say to judges: **anyone can list 200,000 agents, we are the only one that can tell you which 4,000 are alive and which of those you can trust.**
+The one sentence we say to judges: **anyone can list 269,000 agents, we are the only one that can tell you which ones are alive and which of those you can trust.** (Fill the live number in from our own measurement before any pitch.)
 
 ---
 
@@ -66,7 +66,9 @@ Stated criteria: functionality, data quality, agent diversity, and above all **h
 
 BNB Chain's general hackathon framework adds five pillars: design and usability, technical implementation and code quality, BNB Chain integration and ecosystem fit, innovation and creativity, sustainability and market potential.
 
-Reference agent categories given as guidance (not scoring): monitoring agents (markets, wallets, positions), grid trading agents, health factor agents (liquidation protection), yield agents (capital reallocation). If our marketplace handles those four cleanly it handles what comes next.
+Agent categories: BNB Chain's own sources disagree. The hackathon page lists, verbatim: Rebalancing (manages LP ranges), Grid Trading, Yield Optimisation, Health Factor Monitoring. The launch blog and press release list: monitoring agents (markets, wallets, positions), grid trading agents, health factor agents (liquidation protection), yield agents (capital reallocation), with no rebalancing category. We support the union: monitoring, rebalancing, grid-trading, yield, health-factor, plus pancakeswap and other. Agent diversity is scored against "the four categories" on the hackathon page, so all four page categories must have live agents at demo time, and monitoring stays because the blog and press name it and it is the most demo-able.
+
+The TermiX track publishes a weighted rubric on the hackathon page: value of the services 30 percent, proven agent advantage 30 percent, high-stakes categories and track record 20 percent, marketplace quality 20 percent. The Chainwire release adds "real-world usage" as a fourth main criterion. Main track numeric weights were not published as of 17 August 2026; recheck the page weekly during the build.
 
 ### Design consequences, non negotiable
 
@@ -82,7 +84,7 @@ Reference agent categories given as guidance (not scoring): monitoring agents (m
 
 Three failures compound:
 
-**Failure 1: liveness.** An ERC-8004 registration is an NFT with a `tokenURI` pointing at a JSON agent card. Nothing forces that card to exist, to parse, or to name an endpoint that answers. Measurement across Ethereum, BSC, and Base through May 2026 found only 3 percent, 4 percent, and 15 percent respectively exposed a valid registration file with at least one live service endpoint. On BSC that is roughly 96 percent noise.
+**Failure 1: liveness.** An ERC-8004 registration is an NFT with a `tokenURI` pointing at a JSON agent card. Nothing forces that card to exist, to parse, or to name an endpoint that answers. Measurement across Ethereum, BSC, and Base through 13 May 2026 (arXiv:2606.26028, version 2) found only 3 percent, 4 percent, and 15 percent respectively exposed a valid registration file with at least one live service endpoint. On BSC that is roughly 96 percent noise, measured against the 90,145 agents registered at that date. The registry has since roughly tripled, mostly through bulk registrations, so the current live share is likely lower still.
 
 **Failure 2: reputation.** Feedback in the Reputation Registry is permissionless and costs a fraction of a cent on BSC. The same study found 59.2 percent of reviewers on BSC exhibiting coordinated Sybil behaviour, and after removing flagged feedback, 77.9 percent of rated BSC agents had no valid feedback left. Stars are theatre.
 
@@ -90,7 +92,7 @@ Three failures compound:
 
 Existing venues on BSC are explorers or raw directories: they index everything, including the dead 96 percent, and they surface unfiltered star ratings. None of them makes verified liveness and Sybil filtered reputation the primary ranking signal with an integrated hire and escrow flow behind it.
 
-Cite the source properly and honestly in the UI and the pitch: arXiv:2606.26028, "Can Trustless Agents Be Trusted? An Empirical Study of the ERC-8004 Decentralized AI Agent Ecosystem" (preprint, data window ends 13 May 2026). Also arXiv:2606.12128 on operational readiness. **We must independently reproduce these numbers with our own prober and quote our own figure in the product**, with theirs as corroboration. Reproducing it is itself a strong judge moment. Never present a preprint statistic as our own measurement.
+Cite the source properly and honestly in the UI and the pitch: arXiv:2606.26028 version 2 (revised 8 July 2026), "Can Trustless Agents Be Trusted? An Empirical Study of the ERC-8004 Decentralized AI Agent Ecosystem" (preprint, data window ends 13 May 2026). Pin the version everywhere the paper is cited: v1 and v2 report different BSC figures (v1: 72.3 percent of rated agents left with no valid feedback; v2: 77.9 percent). We cite v2. Also arXiv:2606.12128 on operational readiness, which studies Ethereum only: cite it for the "registration heavy, operationally shallow" framing, never for a BSC number. **We must independently reproduce these numbers with our own prober and quote our own figure in the product**, with theirs as corroboration. Reproducing it is itself a strong judge moment. Never present a preprint statistic as our own measurement.
 
 ---
 
@@ -321,17 +323,28 @@ create table probe_results (
 create index on probe_results (agent_id, probed_at desc);
 
 -- raw feedback from the ERC-8004 Reputation Registry
+-- The real NewFeedback event carries a signed int128 value plus a uint8
+-- valueDecimals (no fixed scale), two string tags, an endpoint string, a
+-- feedback URI, and a feedback hash. FeedbackRevoked events must be applied
+-- or the scores are trivially gameable (farm feedback, get snapshotted,
+-- revoke).
 create table feedback (
-  id            bigserial primary key,
-  agent_id      numeric not null,
-  reviewer      bytea not null,
-  score         int,
-  tags          text[],
-  uri           text,
-  tx_hash       bytea not null,
-  log_index     int not null,
-  block_number  bigint not null,
-  block_time    timestamptz not null,
+  id             bigserial primary key,
+  agent_id       numeric not null,
+  reviewer       bytea not null,
+  feedback_index numeric not null,      -- uint64 from the event
+  value          numeric not null,      -- int128, signed, raw
+  value_decimals int not null,
+  tags           text[],
+  endpoint       text,
+  uri            text,
+  feedback_hash  bytea,
+  revoked        boolean not null default false,
+  revoked_tx     bytea,
+  tx_hash        bytea not null,
+  log_index      int not null,
+  block_number   bigint not null,
+  block_time     timestamptz not null,
   unique (tx_hash, log_index)
 );
 create index on feedback (agent_id);
@@ -407,7 +420,7 @@ Rules:
 Binary: `crates/indexer`.
 
 Responsibilities:
-1. Backfill from the registry deployment block to head, in chunked `eth_getLogs` ranges (start at 2,000 blocks per call and back off on provider errors).
+1. Backfill from the registry deployment block to head, in chunked `eth_getLogs` ranges with adaptive sizing: start at 2,000 blocks per call, halve on any provider error, and grow back slowly after sustained success. Public RPCs cap ranges unpredictably (tested 17 Aug 2026: PublicNode served 2,000 blocks, bsc-dataseed and most others refused), so a fixed chunk size will stall. Always include the contract address filter.
 2. Follow head with a confirmation depth of 15 blocks. BSC finality is fast after Fermi but reorgs still happen, so track `block_hash` per ingested range and roll back cleanly if a hash mismatch appears.
 3. Decode Identity Registry events (registration, transfer, `tokenURI` updates) and Reputation Registry feedback events into the tables above.
 4. Enqueue an agent card fetch whenever `token_uri` is new or changed.
@@ -437,6 +450,11 @@ For each declared endpoint, every 30 minutes:
 - Record `ok`, `http_status`, `latency_ms`, `failure_kind`, and a hash of the first 4 KB of the body.
 - A 401 or 402 counts as **alive**. A paywalled agent is a working agent, and 402 is literally the x402 handshake. Only DNS failure, TLS failure, connection refused, timeout, 5xx, and 404 count as down.
 - If the endpoint declares ERC-8183 support, additionally probe its status or health path and record whether it speaks the job protocol.
+
+### Endpoint classification and operator concentration
+A sampled measurement on 17 August 2026 (300 random agents, seed 8004, script preserved in the repo) found that 28 percent of sampled agents had a declared URL that answered, but 81 of those 85 were bulk registrations by a single operator (EvoEvo) whose only declared service is a profile page on the operator's own website. An answering marketing page is not a working agent. So the prober must:
+- Classify each declared endpoint by kind: `service` (A2A, MCP, ERC-8183, or an API that returns structured content), `web` (an HTML page), `metadata` (points back at another agent card). The Live status and the headline live count use `service` endpoints; `web` only agents get their own bucket, shown but labelled.
+- Record the endpoint host per agent and cluster agents by host. A host serving hundreds of registrations is one operator, not hundreds of agents. Show an operator concentration figure on `/stats`: it is the liveness side mirror of reviewer clustering, and it is a number nobody else publishes.
 
 ### Safety rules for the prober, non negotiable
 - Never follow redirects to private ranges. Block `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, and unique local addresses. This is an SSRF guard and judges who read code will look for it.
@@ -476,6 +494,7 @@ For every address that has ever left feedback, compute a weight in `[0, 1]` as a
 | Max score only | reviewer has 3 or more feedbacks and every single one is the maximum score | 0.5 |
 | Reciprocal | A rates B and B rates A, or a cycle of length <= 4 in the reviewer graph | 0.4 |
 | Sub cent activity | address total gas spent lifetime below a threshold and no non registry contract interaction | 0.5 |
+| High revocation rate | reviewer has 3 or more feedbacks and 50 percent or more of them were later revoked | 0.3 |
 
 Floor the result at 0.02 rather than 0. We downweight, we do not silently delete, and the UI must be able to show "we saw 412 reviews, we counted 19".
 
@@ -492,9 +511,28 @@ m  = 5.0                      // prior strength, tune once, then freeze and docu
 mu = weighted population mean score
 
 trust_raw  = (S + m*mu) / (W + m)
-trust      = 100 * normalise(trust_raw)          // map the registry's score range to 0..100
+trust      = 100 * normalise(trust_raw)
 confidence = W / (W + m)                          // 0..1, shown as a band, never hidden
 ```
+
+Normalisation, defined explicitly because the registry does not define a scale.
+The on chain value is a signed `int128` with a per event `valueDecimals`, so
+scores are not commensurable across agents or reviewers (the paper makes the
+same observation). Our rule, published on the methodology page:
+
+1. Scale each event to a decimal: `v = value / 10^valueDecimals`.
+2. Clamp `v` to `[-100, 100]`. Anything outside is an outlier or an attack,
+   and the clamp is documented.
+3. Map to `[0, 1]`: `score_r = (clamp(v) + 100) / 200`. Negative feedback is
+   real feedback and lands below 0.5; it must reduce the score, never be
+   dropped.
+4. Revoked feedback (a `FeedbackRevoked` event) is excluded from S and W
+   entirely, and every snapshot is recomputed from the unrevoked set, so a
+   farm cannot get counted and then revoke.
+
+Because values are not commensurable across agents, normalising them by a
+published rule is a contribution of the product, not plumbing. Say that in
+the methodology page and the pitch.
 
 If `W == 0`, `trust` is null. Show "No verified reviews" and rank on liveness plus job history only. Never fabricate a middling score to fill the column.
 
@@ -617,25 +655,34 @@ Rules for the agent writing this:
 
 ## 15. Chain integration reference
 
-The addresses and package names below come from research and **must be verified before use** (Section 27). Treat them as leads, not gospel.
+Everything below was verified against live sources on 17 August 2026 (see docs/VERIFICATION.md for the full evidence trail).
 
-**ERC-8004 on BSC mainnet (verify on BscScan before any call)**
-- Identity Registry: `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`
-- Reputation Registry: `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`
+**ERC-8004 on BSC mainnet (verified)**
+- Identity Registry: `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` (ERC-1967 UUPS proxy, implementation `0x7274e874CA62410a93Bd8bf61c69d8045E399c02`, `IdentityRegistryUpgradeable`, Sourcify exact match, implementation deployed at block 78,255,281)
+- Reputation Registry: `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` (proxy, implementation `0x16e0FA7f7C56B9a767E34B192B51f921BE31dA34`, `ReputationRegistryUpgradeable`, implementation deployed at block 79,027,282)
+- Key events: `Registered(uint256 indexed agentId, string agentURI, address indexed owner)` and `NewFeedback(uint256 indexed agentId, address indexed clientAddress, uint64 feedbackIndex, int128 value, uint8 valueDecimals, string indexed indexedTag1, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)`; also `URIUpdated`, `MetadataSet`, `FeedbackRevoked`, `ResponseAppended`.
+- Not ERC721Enumerable: no `totalSupply`. Count agents from our indexed `Registered` events; cross check against the `_lastId` counter in storage slot `0xa040f782729de4970518741823ec1276cbcd41a0c7493f62d173341566a04e00`.
+- NOT deployed at these addresses on BSC testnet (Chapel). Testnet work uses our own registry deployment, scoped to CI and e2e only.
 - Reference contracts repo: https://github.com/erc-8004/erc-8004-contracts
 
-Identity is an ERC-721: each agent is a token, `tokenURI` points at the registration JSON. Reputation takes permissionless structured feedback (score plus tags). There is also a Validation Registry with proof hooks (TEE, ZK, re-execution) that we read but do not write.
+Identity is an ERC-721: each agent is a token, `tokenURI` points at the registration JSON. Reputation takes permissionless structured feedback (signed value plus decimals plus tags). There is also a Validation Registry with proof hooks (TEE, ZK, re-execution) that we read but do not write.
 
-**ERC-8183 on BSC mainnet (verify before any call)**
-- AgenticCommerce kernel: `0xea4daa3100a767e86fded867729ae7446476eba6`
-- Also relevant: `EvaluatorRouter` (binds policy, permissionless settle) and `OptimisticPolicy` (silence past the dispute window means approval, disputes go to a whitelisted voter quorum)
+**ERC-8183 on BSC mainnet (verified)**
+- AgenticCommerce kernel proxy: `0xea4daa3100a767e86fded867729ae7446476eba6` (implementation `0xd5f9b570c96b5d67702d508c0bfb8b3b09209787`)
+- EvaluatorRouter proxy: `0x51895229e12f9876011789b04f8698af06ccd6da` (binds policy, permissionless settle)
+- OptimisticPolicy: `0x9c01845705b3078aa2e8cff7520a6376fd766de5` (silence past the dispute window means approval, disputes go to a whitelisted voter quorum)
+- Payment token "United Stables" (U): `0xcE24439F2D9C6a2289F741120FE202248B666666`
+- The SDK job lifecycle is several calls (create_job, register_job, set_provider, set_budget, fund), which is exactly why HireRail wraps a hire into one transaction.
 - Job lifecycle: `OPEN -> FUNDED -> SUBMITTED -> COMPLETED | REJECTED | EXPIRED`
 - First live implementation: BNBAgent SDK, Python, `pip install bnbagent`, repo https://github.com/bnb-chain/bnbagent-sdk
 
 **x402 / Binance x402 (B402)**
 - Flow: agent calls a paid endpoint, server replies HTTP 402 with payment terms, agent signs an off chain authorization, a facilitator settles on chain.
 - Stablecoins supported on BSC: U, USD1, USDT, USDC.
-- Auth methods: `eip3009`, `permit2-exact`, `permit2-upto`. **Use `permit2-exact` or `eip3009`. Never `permit2-upto` with an open ceiling.** The BNBAgent SDK's signer already denylists dangerous unlimited allowance permits, keep that behaviour.
+- Auth methods per token (per launch coverage; Binance's own API reference was unreachable to automation, re-verify during M7): U and USD1 support `eip3009`, `permit2-exact`, `permit2-upto`. USDT and USDC on BSC do not implement EIP-3009, so they support `permit2-exact` and `permit2-upto` only. Verify USD1 EIP-3009 support directly before relying on it; if it holds, USD1 is the cleanest exact-amount path.
+- `permit2-upto` IS bounded: the client signs a maximum, settlement must be at or below it, the Permit2 nonce enforces single use. Rule: prefer `permit2-exact` (or `eip3009` where the token supports it); accept `permit2-upto` only with a ceiling equal to the session budget, never larger.
+- Never leave a standing Permit2 allowance alive past session expiry. Revoke on session end and show the revocation in the UI: it is a visible safety feature, not just hygiene.
+- The BNBAgent SDK's signer already denylists dangerous unlimited allowance permits, keep that behaviour.
 - B402 covers gas.
 - Docs: https://www.binance.com/en/binancex402
 
@@ -651,8 +698,9 @@ Identity is an ERC-721: each agent is a token, `tokenURI` points at the registra
 
 **Discovery and cross checks**
 - Agent0 SDK (TypeScript and Python), ERC-8004 discovery over The Graph subgraphs, live on BSC: https://github.com/agent0lab/agent0-ts and https://docs.sdk.ag0.xyz/
-- The Graph Agent0 subgraphs, one GraphQL schema across BSC, Base, Ethereum, Polygon, Monad: https://thegraph.com/blog/agent0-subgraphs-live-erc-8004-agent-economy/
-- AltLayer 8004scan explorer and builder API: https://8004scan.io and https://docs.altlayer.io/altlayer-documentation/8004-scan/overview
+- The Graph Agent0 BSC subgraph id `D6aWqowLkWqBgcqmpNKXuNikPkob24ADXCciiP8Hvn1K` (agent0-bsc-mainnet), endpoint `https://gateway.thegraph.com/api/<GRAPH_API_KEY>/subgraphs/id/D6aWqowLkWqBgcqmpNKXuNikPkob24ADXCciiP8Hvn1K`. Requires a free Graph API key, there is no keyless endpoint. The Agent entity field is `agentURI`, not `tokenURI`. Decision: we backfill from raw logs as primary (the data and freshness are ours), the subgraph is the cross check.
+- AltLayer 8004scan explorer and public API: https://8004scan.io, API at `https://api.8004scan.io` (OpenAPI at /openapi.json, reads unauthenticated, for example `/api/v1/agents?chain_id=56`). Agent deep link: `https://8004scan.io/agents/bsc/{token_id}` (slug is `bsc`, and the site is an SPA that returns 200 for any path, validate by content).
+- RPC (tested 17 Aug 2026 with a real 2,000 block eth_getLogs): primary `https://bsc-rpc.publicnode.com` (mainnet) and `https://bsc-testnet-rpc.publicnode.com` (Chapel). Most other public endpoints refused wide ranges. Paid fallback: Alchemy (BNB Chain support with archive access). Send a real User-Agent header on RPC calls, PublicNode 403s empty client UAs.
 
 **Chain characteristics to design for**
 - After the Maxwell upgrade (30 June 2025, blocks 1.5s to 0.75s) and the Fermi hard fork (14 January 2026, blocks to 0.45s), BSC runs sub second blocks, median gas around one cent, roughly 100M gas per second. Cheap frequent writes are viable, so publishing a snapshot daily costs nothing and looks serious. Do not build for expensive gas.
@@ -666,7 +714,7 @@ Identity is an ERC-721: each agent is a token, `tokenURI` points at the registra
 ```
 GET  /v1/agents
        ?q=              full text over name + description
-       &category=       monitoring | trading | health-factor | yield | pancakeswap | other
+       &category=       monitoring | rebalancing | grid-trading | yield | health-factor | pancakeswap | other
        &status=         live | flaky | down | dormant | measuring
        &min_trust=      0..100
        &min_uptime=     0..1
@@ -821,7 +869,7 @@ Put these in `web/app/globals.css` as CSS variables and map them into the Tailwi
 
 **`/` Marketplace**
 - Header line, mono eyebrow: `ERC-8004 / BNB SMART CHAIN`. Display title: "Most agents are not there." Sub line in body: "204,881 registered. 312 answering. We check every 30 minutes."
-- Filter rail on the left, sticky: category (the four reference categories plus PancakeSwap and Other), status, minimum trust slider, minimum uptime slider, has completed jobs, sort.
+- Filter rail on the left, sticky: category (monitoring, rebalancing, grid trading, yield, health factor, PancakeSwap, other), status, minimum trust slider, minimum uptime slider, has completed jobs, sort.
 - The dormant toggle sits at the bottom of the rail, off by default, labelled with the live count: `Show 204,569 dormant agents`.
 - Grid of agent cards. Each card: name, one line description, category chip, status pill, the Probe Strip, and one data row in mono: `UPTIME 98.7% . TRUST 78 . KEPT 19/412 . JOBS 27`.
 - A **Hire** button on the card itself. Discovery to hire in one click is what is being scored, so do not bury it on the detail page.
@@ -890,8 +938,8 @@ Deliver: session mode checkout, on chain caps and expiries, the `/sessions` page
 
 ### 20.3 PancakeSwap (1,000 CAKE)
 Deliver two working reference agents, registered on ERC-8004 so they appear in our own marketplace (this also fixes the agent diversity requirement):
-1. **Range keeper:** monitors a PancakeSwap Infinity CL position and rebalances the range when price exits it. Executes only through an Altana session cap. Never holds principal.
-2. **Yield scout:** queries PancakeSwap pool data and reports better risk adjusted pool options for a given asset, with a written rationale. Read only, zero funds at risk, which is the safest possible demo.
+1. **Range keeper:** monitors a PancakeSwap Infinity CL position and rebalances the range when price exits it. Executes only through an Altana session cap. Never holds principal. Note: there is no Infinity subgraph, so position state is read on chain directly (CLPositionManager `0x55f4c8abA71A1e923edC303eb4fEfF14608cC226`, `modifyLiquidities` with encoded actions, Permit2 required). That is meaningfully more work than a subgraph query; budget for it in M7, and if M7 runs long, ship the yield scout alone and say so.
+2. **Yield scout:** queries PancakeSwap pool data and reports better risk adjusted pool options for a given asset, with a written rationale. Read only, zero funds at risk, which is the safest possible demo. Pool data comes from the V3 BSC subgraph (`thegraph.com/explorer/subgraphs/Hv1GncLY5docZoGtXjo4kwbTvxm3MAhVZqBZE4sUT9eZ`) or the quoter contracts; there is no Infinity subgraph.
 
 Both must be genuinely useful and honest about limits. Add a `pancakeswap` category chip in the marketplace so the track judges can find them in two clicks.
 
@@ -970,6 +1018,7 @@ DATABASE_URL=postgres://trustlist:trustlist@localhost:5432/trustlist
 SNAPSHOT_PUBLISHER_KEY=        # deploy/publish only, never in the web app
 IPFS_GATEWAY=
 IPFS_GATEWAY_FALLBACK=
+GRAPH_API_KEY=                 # The Graph gateway key for the Agent0 cross check
 PROBE_CONCURRENCY=64
 PROBE_INTERVAL_SECS=1800
 BSCSCAN_API_KEY=
@@ -1259,7 +1308,7 @@ Passing a lint gate does not prove the numbers on screen are true. This script p
 3. Pick one agent with reviews. Recompute the trust score by hand from the `feedback` and `reviewer_weights` tables using the formula in Section 13 and assert it matches to within 0.5.
 4. Take the latest snapshot, pull the published leaf set, rebuild the Merkle root locally, and assert it equals the root stored on chain.
 5. Take one agent's leaf, call `TrustSnapshot.verify` on chain with the proof, and assert it returns true.
-6. Assert `total_unfiltered` from `/v1/stats` equals the on chain `totalSupply` of the Identity Registry to within one block of drift.
+6. Assert `total_unfiltered` from `/v1/stats` equals our indexed count of `Registered` events, and cross check both against the registry's `_lastId` counter read from ERC-7201 namespaced storage slot `0xa040f782729de4970518741823ec1276cbcd41a0c7493f62d173341566a04e00` (the contract is not ERC721Enumerable, there is no `totalSupply`). The indexed event count is the primary source because it is our own measurement; the storage slot is the independent cross check. Put the diff between the two methods in the audit table: two independent methods agreeing is a stronger artifact than either alone.
 
 Print a short table of expected versus actual for all six. Put that table in `docs/SUBMISSION.md`. A judge reading "we re-derive our own numbers from chain with a different RPC and here is the diff" is worth more than any feature.
 
@@ -1362,11 +1411,11 @@ Target after fixes: median under 90 seconds, zero questions asked.
 
 Judges may not want to spend their own money, and a hire flow they will not complete is a hire flow they cannot score. So build a one click path that lets anyone finish a real job for free.
 
-- A **Judge mode** toggle in the footer switches the app to BSC testnet.
-- A prefunded relayer wallet we control covers gas and a 1 test USDT budget for the first hire per browser session, rate limited hard by IP and session.
-- The full flow still runs for real: real ERC-8183 job, real escrow, real settlement, real transaction hashes on testnet BscScan. Nothing is simulated.
-- A single banner explains it in one sentence: "Testnet, funded by us, so you can run a real hire without spending anything."
-- Keep mainnet as the default so the product is never a toy. Judge mode is a door, not the building.
+- Judge mode runs on **mainnet**, not testnet. The ERC-8004 registries are not deployed on BSC Chapel, so a testnet judge mode would mean hiring from a registry we deployed and seeded ourselves: synthetic data, and the demo loses its teeth. On mainnet the judge hires a real registered agent from the real registry.
+- A prefunded relayer wallet we control covers gas and a 1 USDT budget for the first hire per browser session, rate limited hard by IP and session. At around a cent of gas per transaction, a hundred judge hires costs on the order of a hundred dollars, which is nothing against the prize.
+- The full flow still runs for real: real ERC-8183 job, real escrow, real settlement, real transaction hashes on BscScan. Nothing is simulated.
+- A single banner explains it in one sentence: "Funded by us, so you can run a real hire without spending anything."
+- Self deployed testnet registry instances (from the official erc-8004-contracts repo) exist only for CI and the e2e suite, where synthetic data is correct. Say so in the README.
 
 This is cheap to build and it directly raises the odds a judge completes the one flow they are told to score.
 

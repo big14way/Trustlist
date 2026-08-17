@@ -77,3 +77,23 @@ Tested with a real 2000 block eth_getLogs (address filtered):
 - arXiv:2606.26028 exists with the exact claimed title. Confirmed from the abstract: live endpoints 3% Ethereum, 4% BSC, 15% Base; Sybil reviewers 59.2% on BSC (73.5% Ethereum, 90.6% Base); after removing Sybil flagged feedback 77.9% of rated BSC agents have no valid feedback. Data window ends 13 May 2026.
 - Registration counts in the paper: Ethereum 32,343, BSC 90,145, Base 50,985. The spec's "roughly 200,000 on BSC" is wrong as a paper citation. The chain itself now shows about 269,234 (see item 3), so the honest framing is: the paper measured 90,145 through 13 May 2026, the registry has since grown to about 269,000 by our own chain read, and the percentages are the paper's, to be reproduced by our prober.
 - arXiv:2606.12128 exists with the exact claimed title, but it studies Ethereum only and its abstract has no percentages. Cite it for the "registration heavy, operationally shallow" framing, never for a BSC number.
+
+## 12. Follow up round, 17 August 2026 (after review)
+
+### Category taxonomy, settled with verbatim quotes
+BNB Chain's own sources disagree. The hackathon page lists, verbatim: "Rebalancing: Manages LP ranges, resets positions automatically", "Grid Trading: Places and manages automated grid orders", "Yield Optimisation: Routes liquidity to the highest available APR", "Health Factor Monitoring: Protects lending positions from liquidation". The launch blog lists, verbatim: "Monitoring agents: watching markets, wallets, and positions", "Grid trading agents: running automated strategies within set ranges", "Health factor agents: tracking loan positions and acting before liquidation", "Yield agents: moving capital to where it earns most". The Chainwire release matches the blog. Resolution: support the union (monitoring, rebalancing, grid-trading, yield, health-factor, plus pancakeswap and other); the page's four must all have live agents at demo time.
+
+### Rubric and reference agents, rechecked after build period opened
+- Main track: criteria named (Functionality, Data Quality, Agent Diversity; Chainwire adds "real-world usage") but no numeric weights published anywhere as of 17 Aug 2026. Recheck weekly.
+- TermiX track rubric IS published, verbatim: "Value of the services: 30%", "Proven agent advantage: 30%", "High-stakes categories & track record: 20%", "Marketplace quality: 20%".
+- Reference agents repo: still not findable. Every outbound link on the hackathon page was enumerated; the only GitHub links are the Altana SDK and TermiX bsc-mcp (partner tooling). Also found on the page: docs.altana.network/sdk/erc8183 and /sdk/x402-server (the Altana SDK covers ERC-8183 and x402 server side), skills.altana.network, and the intake form (forms.gle/jQevEPCAacBXaKG79).
+
+### Sampled liveness measurement (our own, first cut)
+Method: 300 agent ids drawn uniformly (seed 8004) from 1..269,234; tokenURI read via eth_call; cards fetched (https, ipfs, data URIs); declared URLs probed with the Section 12 aliveness rule and SSRF guard. Script: scripts/sample_liveness.py, raw results: scripts/sample_liveness_results_2026-08-17.json.
+
+Results: 293 of 300 had a tokenURI. 178 (59 percent) were inline data URIs declaring no endpoints at all. 11 cards unreachable, 2 returned 404, 6 invalid schemes, 3 timed out. 19 agents declared endpoints that were all down. 85 (28.3 percent, CI 23.2 to 33.4) had at least one declared URL that answered, BUT 81 of those 85 are bulk registrations by one operator (EvoEvo) whose only declared service is a web profile page on evoevo.ai, and 3 more are QuackAI metadata URLs. Only 1 of 300 declared anything resembling an independent agent service endpoint that answered.
+
+Reading: under the paper's loose definition (any live declared endpoint) the share is now roughly 28 percent, inflated by one farm's website answering for 81 registrations. Under a strict definition (a working agent service, not an operator profile page) the live share is at or below about 1.3 percent, lower than the paper's 4 percent, consistent with the prediction that post May growth is placeholder heavy. The thesis holds and sharpens. Consequence for the product: the prober classifies endpoint kind (service, web, metadata) and clusters agents by endpoint host, and we publish an operator concentration figure. This first cut is a sample; the real prober measures the full registry and that number becomes the headline.
+
+### Paper version pin
+arXiv:2606.26028 v1 and v2 differ on BSC figures (no valid feedback after filtering: 72.3 percent in v1, 77.9 percent in v2). We cite v2 (revised 8 July 2026) everywhere, explicitly.
