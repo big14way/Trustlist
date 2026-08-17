@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* The six design tokens, SPEC.md Section 18.1. Every shade on the site is
+   derived from these with color-mix. No other hex values in components. */
+:root {
+  --paper: #edefe8;
+  --ink: #0f1518;
+  --depth: #16302f;
+  --signal: #ffb01f;
+  --dormant: #9aa3a0;
+  --flag: #c4462f;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-depth: var(--depth);
+  --color-signal: var(--signal);
+  --color-dormant: var(--dormant);
+  --color-flag: var(--flag);
+  --font-display: var(--font-bricolage);
+  --font-body: var(--font-public-sans);
+  --font-data: var(--font-jetbrains);
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-public-sans), sans-serif;
+  /* Graph paper motif: a low contrast 8px grid, the measurement metaphor. */
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ink) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 4%, transparent) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+.font-data {
+  font-family: var(--font-jetbrains), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-display {
+  font-family: var(--font-bricolage), sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.eyebrow {
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

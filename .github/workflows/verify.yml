@@ -1,0 +1,46 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: trustlist
+          POSTGRES_PASSWORD: trustlist
+          POSTGRES_DB: trustlist
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trustlist -d trustlist"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        run: cd web && npm ci
+      - name: Run the gate
+        env:
+          DATABASE_URL: postgres://trustlist:trustlist@localhost:5432/trustlist
+        run: |
+          set -a && source .env.example && set +a
+          export DATABASE_URL=postgres://trustlist:trustlist@localhost:5432/trustlist
+          bash scripts/verify.sh

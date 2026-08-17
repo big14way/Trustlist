@@ -1,0 +1,24 @@
+{
+  "name": "trustlist-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "15.4.6",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.11",
+    "@types/node": "22.15.29",
+    "@types/react": "19.1.9",
+    "@types/react-dom": "19.1.7",
+    "tailwindcss": "4.1.11",
+    "typescript": "5.8.3"
+  }
+}
