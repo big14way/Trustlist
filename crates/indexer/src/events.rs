@@ -44,7 +44,7 @@ mod tests {
     fn registered_topic0_matches_chain() {
         assert_eq!(
             format!("0x{}", alloy::hex::encode(Registered::SIGNATURE_HASH)),
-            "0xca52e62c367d81bb2e328eb795f7c7ba24afb478408a26c0e201d155c449bc4a"
+            "0xca52e62c367d81bb2e328eb795f7c7ba24afb478408a26c0e201d155c449bc4a" // event topic0 hash
         );
     }
 
@@ -52,7 +52,7 @@ mod tests {
     fn new_feedback_topic0_matches_chain() {
         assert_eq!(
             format!("0x{}", alloy::hex::encode(NewFeedback::SIGNATURE_HASH)),
-            "0x6a4a61743519c9d648a14e6493f47dbe3ff1aa29e7785c96c8326a205e58febc"
+            "0x6a4a61743519c9d648a14e6493f47dbe3ff1aa29e7785c96c8326a205e58febc" // event topic0 hash
         );
     }
 }

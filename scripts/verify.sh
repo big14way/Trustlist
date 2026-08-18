@@ -60,7 +60,7 @@ COUNT=$(find crates/api/src crates/prober/src crates/indexer/src crates/trust/sr
 say "6. typecheck, lint, build"
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
-( cd web && npx tsc --noEmit && npm run build )
+( cd web && npx tsc --noEmit && NEXT_BUILD_DIR=.next-verify npm run build )
 if grep -rIn ': any\b' web/app web/components web/lib \
     --include='*.ts' --include='*.tsx' 2>/dev/null; then
   fail "any types found above"
