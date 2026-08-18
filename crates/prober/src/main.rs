@@ -25,7 +25,14 @@ struct Fetcher {
     client: reqwest::Client,
     ipfs_gateway: String,
     ipfs_gateway_fallback: Option<String>,
+    /// Ordinary hosts: one request per ten seconds, the good citizen rule.
     host_limiter: Arc<HostLimiter>,
+    /// Bulk hosts serving over one hundred registrations (metadata farms,
+    /// S3 buckets, IPFS gateways): a pooled five per second. At one per ten
+    /// seconds a single 100k agent host would take twelve days, which is
+    /// slower than the registry grows. Documented on the methodology page.
+    bulk_limiter: Arc<HostLimiter>,
+    bulk_hosts: std::sync::RwLock<std::collections::HashSet<String>>,
 }
 
 #[tokio::main]
@@ -34,26 +41,44 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let pool = common::connect_and_migrate(&config.database_url).await?;
 
-    // One request per 10 seconds per host, the good citizen rule.
-    let quota = Quota::with_period(Duration::from_secs(10))
+    let strict = Quota::with_period(Duration::from_secs(10))
         .context("quota")?
         .allow_burst(NonZeroU32::new(2).context("burst")?);
+    let bulk = Quota::with_period(Duration::from_millis(200))
+        .context("bulk quota")?
+        .allow_burst(NonZeroU32::new(10).context("bulk burst")?);
     let fetcher = Arc::new(Fetcher {
         pool: pool.clone(),
         client: fetch::build_client()?,
         ipfs_gateway: config.ipfs_gateway.clone(),
         ipfs_gateway_fallback: config.ipfs_gateway_fallback.clone(),
-        host_limiter: Arc::new(RateLimiter::keyed(quota)),
+        host_limiter: Arc::new(RateLimiter::keyed(strict)),
+        bulk_limiter: Arc::new(RateLimiter::keyed(bulk)),
+        bulk_hosts: std::sync::RwLock::new(std::collections::HashSet::new()),
     });
 
     let workers = config.probe_concurrency.clamp(1, 256);
     tracing::info!(workers, "card fetcher starting");
     loop {
+        // Refresh which hosts count as bulk before each batch.
+        let bulk_rows: Vec<(String,)> = sqlx::query_as(
+            "select lower(substring(token_uri from 'https?://([^/]+)'))
+             from agents where token_uri like 'http%'
+             group by 1 having count(*) > 100",
+        )
+        .fetch_all(&pool)
+        .await?;
+        if let Ok(mut set) = fetcher.bulk_hosts.write() {
+            set.clear();
+            set.extend(bulk_rows.into_iter().map(|(h,)| h));
+        }
+        // Random order interleaves hosts so one slow host cannot stall a
+        // whole batch behind its rate limit.
         let batch: Vec<(String, String)> = sqlx::query_as(
             "select agent_id::text, token_uri from agents
              where card_fetched_at is null and token_uri is not null and token_uri <> ''
-             order by agent_id
-             limit 1000",
+             order by random()
+             limit 2000",
         )
         .fetch_all(&pool)
         .await?;
@@ -159,7 +184,17 @@ impl Fetcher {
         for candidate in candidates {
             if let Ok(parsed) = candidate.parse::<url::Url>() {
                 if let Some(host) = parsed.host_str() {
-                    self.host_limiter.until_key_ready(&host.to_owned()).await;
+                    let host = host.to_ascii_lowercase();
+                    let is_bulk = self
+                        .bulk_hosts
+                        .read()
+                        .map(|set| set.contains(&host))
+                        .unwrap_or(false);
+                    if is_bulk {
+                        self.bulk_limiter.until_key_ready(&host).await;
+                    } else {
+                        self.host_limiter.until_key_ready(&host).await;
+                    }
                 }
             }
             match fetch::guarded_get(&self.client, &candidate).await {
