@@ -242,8 +242,9 @@ fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-/// One probe pass: refresh the schedule, take everything due, probe it
-/// through the tiered rate limiters, and append the results.
+/// One probe pass: refresh the schedule, take everything due, and probe it
+/// as one queue per host so a slow or rate limited host only delays itself.
+/// A global semaphore caps concurrent requests in flight.
 async fn probe_pass(
     f: &Arc<Fetcher>,
     pool: &PgPool,
@@ -254,20 +255,37 @@ async fn probe_pass(
     if added > 0 {
         tracing::info!(added, "endpoints joined the probe schedule");
     }
-    let due = probe::due_batch(pool, 4000).await?;
+    let due = probe::due_batch(pool, 30_000).await?;
     if due.is_empty() {
         return Ok(());
     }
     let total = due.len();
+
+    let mut by_host: std::collections::HashMap<String, Vec<(String, String)>> =
+        std::collections::HashMap::new();
+    for (agent_id, url) in due {
+        let host = url
+            .parse::<url::Url>()
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+            .unwrap_or_default();
+        by_host.entry(host).or_default().push((agent_id, url));
+    }
+
+    let sem = Arc::new(tokio::sync::Semaphore::new(workers));
     let mut handles = Vec::new();
-    for chunk in due.chunks(total.div_ceil(workers)) {
-        let chunk = chunk.to_vec();
+    for (_host, queue) in by_host {
         let f = f.clone();
         let pool = pool.clone();
+        let sem = sem.clone();
         handles.push(tokio::spawn(async move {
-            for (agent_id, url) in chunk {
+            for (agent_id, url) in queue {
                 f.wait_for_host(&url).await;
+                let Ok(permit) = sem.acquire().await else {
+                    return;
+                };
                 let outcome = probe::probe_endpoint(&f.client, &url).await;
+                drop(permit);
                 if let Err(e) = probe::record(&pool, &agent_id, &url, &outcome).await {
                     tracing::warn!(agent_id, %e, "recording probe failed");
                 }
