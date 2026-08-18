@@ -4,6 +4,7 @@
 
 mod card;
 mod fetch;
+mod probe;
 
 use anyhow::Context;
 use common::config::Config;
@@ -58,6 +59,22 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let workers = config.probe_concurrency.clamp(1, 256);
+    let interval = config.probe_interval_secs;
+
+    // Endpoint probe loop runs beside the card fetcher.
+    {
+        let f = fetcher.clone();
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = probe_pass(&f, &pool, interval as i32, workers).await {
+                    tracing::warn!(%e, "probe pass failed");
+                }
+                tokio::time::sleep(Duration::from_secs(15)).await;
+            }
+        });
+    }
+
     tracing::info!(workers, "card fetcher starting");
     loop {
         // Refresh which hosts count as bulk before each batch.
@@ -160,6 +177,25 @@ impl Fetcher {
         Ok(())
     }
 
+    /// Apply the tiered per host rate limit for any outbound URL.
+    async fn wait_for_host(&self, candidate: &str) {
+        if let Ok(parsed) = candidate.parse::<url::Url>() {
+            if let Some(host) = parsed.host_str() {
+                let host = host.to_ascii_lowercase();
+                let is_bulk = self
+                    .bulk_hosts
+                    .read()
+                    .map(|set| set.contains(&host))
+                    .unwrap_or(false);
+                if is_bulk {
+                    self.bulk_limiter.until_key_ready(&host).await;
+                } else {
+                    self.host_limiter.until_key_ready(&host).await;
+                }
+            }
+        }
+    }
+
     /// Resolve a tokenURI to card bytes. Returns (status_label, bytes).
     async fn resolve(&self, uri: &str) -> (String, Option<Vec<u8>>) {
         if uri.starts_with("data:") {
@@ -182,21 +218,7 @@ impl Fetcher {
 
         let mut last = "unreachable".to_owned();
         for candidate in candidates {
-            if let Ok(parsed) = candidate.parse::<url::Url>() {
-                if let Some(host) = parsed.host_str() {
-                    let host = host.to_ascii_lowercase();
-                    let is_bulk = self
-                        .bulk_hosts
-                        .read()
-                        .map(|set| set.contains(&host))
-                        .unwrap_or(false);
-                    if is_bulk {
-                        self.bulk_limiter.until_key_ready(&host).await;
-                    } else {
-                        self.host_limiter.until_key_ready(&host).await;
-                    }
-                }
-            }
+            self.wait_for_host(&candidate).await;
             match fetch::guarded_get(&self.client, &candidate).await {
                 Ok(res) if (200..300).contains(&res.status) => {
                     return ("ok".into(), Some(res.body));
@@ -218,4 +240,45 @@ impl Fetcher {
 
 fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
+}
+
+/// One probe pass: refresh the schedule, take everything due, probe it
+/// through the tiered rate limiters, and append the results.
+async fn probe_pass(
+    f: &Arc<Fetcher>,
+    pool: &PgPool,
+    default_cadence: i32,
+    workers: usize,
+) -> anyhow::Result<()> {
+    let added = probe::sync_schedule(pool, default_cadence).await?;
+    if added > 0 {
+        tracing::info!(added, "endpoints joined the probe schedule");
+    }
+    let due = probe::due_batch(pool, 4000).await?;
+    if due.is_empty() {
+        return Ok(());
+    }
+    let total = due.len();
+    let mut handles = Vec::new();
+    for chunk in due.chunks(total.div_ceil(workers)) {
+        let chunk = chunk.to_vec();
+        let f = f.clone();
+        let pool = pool.clone();
+        handles.push(tokio::spawn(async move {
+            for (agent_id, url) in chunk {
+                f.wait_for_host(&url).await;
+                let outcome = probe::probe_endpoint(&f.client, &url).await;
+                if let Err(e) = probe::record(&pool, &agent_id, &url, &outcome).await {
+                    tracing::warn!(agent_id, %e, "recording probe failed");
+                }
+            }
+        }));
+    }
+    for h in handles {
+        if let Err(e) = h.await {
+            tracing::error!(%e, "probe worker panicked");
+        }
+    }
+    tracing::info!(total, "probe batch complete");
+    Ok(())
 }
