@@ -164,6 +164,7 @@ impl<P: Provider + Clone> Ingestor<P> {
                     break;
                 }
             };
+            self.prefetch_block_times(&logs).await?;
             for log in &logs {
                 self.apply_log(registry, log)
                     .await
@@ -193,6 +194,43 @@ impl<P: Provider + Clone> Ingestor<P> {
             );
         }
         Ok(next)
+    }
+
+    /// Fetch timestamps for every distinct block in a batch of logs, sixteen
+    /// at a time, so dense rounds are not serialised on one call at a time.
+    async fn prefetch_block_times(&mut self, logs: &[Log]) -> anyhow::Result<()> {
+        use futures::StreamExt;
+        let mut missing: Vec<u64> = logs
+            .iter()
+            .filter_map(|l| l.block_number)
+            .filter(|n| !self.block_times.contains_key(n))
+            .collect();
+        missing.sort_unstable();
+        missing.dedup();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let provider = self.provider.clone();
+        let mut stream = futures::stream::iter(missing.into_iter().map(|n| {
+            let provider = provider.clone();
+            async move {
+                let block =
+                    with_deadline(async { provider.get_block_by_number(n.into()).await }).await??;
+                anyhow::Ok((n, block))
+            }
+        }))
+        .buffer_unordered(16);
+        while let Some(result) = stream.next().await {
+            let (n, block) = result?;
+            let block = block.with_context(|| format!("block {n} missing"))?;
+            let t = DateTime::from_timestamp(block.header.timestamp as i64, 0)
+                .context("timestamp out of range")?;
+            self.block_times.insert(n, t);
+        }
+        if self.block_times.len() > 100_000 {
+            self.block_times.clear();
+        }
+        Ok(())
     }
 
     async fn block_time(&mut self, number: u64) -> anyhow::Result<DateTime<Utc>> {
