@@ -1,16 +1,88 @@
-//! Trust engine. Reviewer weighting and scoring land in M5; at M0 this
-//! binary proves configuration and database wiring, then exits cleanly.
+//! Scoring engine. M2 computes liveness and status buckets from probe
+//! history on a schedule. Reviewer weighting and trust scores arrive in M5;
+//! until then trust columns stay null and nothing fabricates a score.
 
 use common::config::Config;
+use sqlx::PgPool;
+use std::time::Duration;
+
+/// SPEC.md Section 12: liveness = 100 * (0.55*uptime_7d + 0.30*card_quality
+/// + 0.15*latency_factor). Status buckets: Live >= 0.9, Flaky 0.5 to 0.9,
+/// Down < 0.5, Dormant (no valid endpoint), Measuring (under the minimum
+/// probe count: 24 at the 30 minute cadence, 6 for daily probed web only
+/// agents, documented on the methodology page).
+const SCORE_SQL: &str = "
+insert into agent_scores (
+  agent_id, computed_at, liveness, uptime_7d, median_latency, trust,
+  trust_confidence, raw_star_avg, feedback_total, feedback_kept,
+  jobs_completed, jobs_disputed, rank_score, status, probes_7d, min_probes
+)
+select
+  s.agent_id,
+  now(),
+  round(100 * (0.55 * coalesce(p.uptime, 0)
+             + 0.30 * cq.card_quality
+             + 0.15 * coalesce(p.latency_factor, 0))::numeric, 2),
+  round(p.uptime::numeric, 4),
+  p.median_latency,
+  null,
+  null,
+  null,
+  coalesce(f.total, 0),
+  0,
+  0,
+  0,
+  round((0.45 * 100 * (0.55 * coalesce(p.uptime, 0)
+                     + 0.30 * cq.card_quality
+                     + 0.15 * coalesce(p.latency_factor, 0)))::numeric, 2),
+  case
+    when p.probes is null or p.probes < s.min_probes then 'measuring'
+    when p.uptime >= 0.9 then 'live'
+    when p.uptime >= 0.5 then 'flaky'
+    else 'down'
+  end,
+  coalesce(p.probes, 0),
+  s.min_probes
+from (
+  select agent_id, min(case when cadence_secs <= 1800 then 24 else 6 end) as min_probes
+  from probe_schedule group by agent_id
+) s
+join agents a using (agent_id)
+cross join lateral (
+  select (0.4 * (a.card_status = 'ok')::int
+        + 0.3 * (jsonb_array_length(coalesce(a.endpoints, '[]'::jsonb)) > 0)::int
+        + 0.2 * (a.name is not null and a.description is not null)::int
+        + 0.1 * (a.declared_skills is not null)::int) as card_quality
+) cq
+left join lateral (
+  select count(*) as probes,
+         avg(ok::int)::float8 as uptime,
+         percentile_cont(0.5) within group (order by latency_ms)::int as median_latency,
+         greatest(0, least(1, 1 - (percentile_cont(0.5) within group (order by latency_ms) / 5000.0)))::float8 as latency_factor
+  from probe_results pr
+  where pr.agent_id = s.agent_id and pr.probed_at > now() - interval '7 days'
+) p on true
+left join lateral (
+  select count(*) as total from feedback fb
+  where fb.agent_id = s.agent_id and not fb.revoked
+) f on true";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     common::init_tracing("trust");
     let config = Config::from_env()?;
-    let _pool = common::connect_and_migrate(&config.database_url).await?;
-    tracing::info!(
-        reputation_registry = %config.reputation_registry,
-        "config and database verified; scoring ships in M5, exiting"
-    );
-    Ok(())
+    let pool = common::connect_and_migrate(&config.database_url).await?;
+
+    loop {
+        match run_scoring(&pool).await {
+            Ok(rows) => tracing::info!(rows, "scoring pass complete"),
+            Err(e) => tracing::error!(%e, "scoring pass failed"),
+        }
+        tokio::time::sleep(Duration::from_secs(1800)).await;
+    }
+}
+
+async fn run_scoring(pool: &PgPool) -> anyhow::Result<u64> {
+    let result = sqlx::query(SCORE_SQL).execute(pool).await?;
+    Ok(result.rows_affected())
 }
