@@ -261,6 +261,11 @@ async fn probe_pass(
     }
     let total = due.len();
 
+    // Cap any single host's share of a pass: a bulk host with tens of
+    // thousands of first time probes would otherwise hold the pass barrier
+    // for an hour while 30 minute cadence endpoints go stale. The remainder
+    // stays due and the next pass picks it up.
+    const PER_HOST_CAP: usize = 300;
     let mut by_host: std::collections::HashMap<String, Vec<(String, String)>> =
         std::collections::HashMap::new();
     for (agent_id, url) in due {
@@ -269,7 +274,10 @@ async fn probe_pass(
             .ok()
             .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
             .unwrap_or_default();
-        by_host.entry(host).or_default().push((agent_id, url));
+        let queue = by_host.entry(host).or_default();
+        if queue.len() < PER_HOST_CAP {
+            queue.push((agent_id, url));
+        }
     }
 
     let sem = Arc::new(tokio::sync::Semaphore::new(workers));
