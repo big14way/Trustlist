@@ -51,7 +51,7 @@ impl Registry {
     }
 }
 
-impl<P: Provider> Ingestor<P> {
+impl<P: Provider + Clone> Ingestor<P> {
     pub fn new(provider: P, pool: PgPool) -> Self {
         Self {
             provider,
@@ -117,8 +117,10 @@ impl<P: Provider> Ingestor<P> {
         }
     }
 
-    /// Ingest one adaptive chunk starting at `from`, not exceeding `head`.
-    /// Returns the next start block.
+    /// Ingest one round of up to `PARALLEL_RANGES` adaptive chunks starting
+    /// at `from`, fetched concurrently, applied in order. Returns the next
+    /// start block: past every contiguous successful range, stopping at the
+    /// first failure so nothing is ever skipped.
     pub async fn ingest_chunk(
         &mut self,
         registry: Registry,
@@ -126,48 +128,71 @@ impl<P: Provider> Ingestor<P> {
         from: u64,
         head: u64,
     ) -> anyhow::Result<u64> {
-        let to = (from + self.chunk - 1).min(head);
-        let filter = Filter::new().address(address).from_block(from).to_block(to);
-        let logs = match with_deadline(self.provider.get_logs(&filter))
-            .await
-            .unwrap_or_else(|e| {
-                Err(alloy::transports::TransportErrorKind::custom_str(
-                    &e.to_string(),
-                ))
-            }) {
-            Ok(logs) => {
-                // Grow slowly after success, halve on failure.
-                self.chunk = (self.chunk + self.chunk / 4).min(MAX_CHUNK);
-                logs
+        const PARALLEL_RANGES: u64 = 6;
+        let mut ranges = Vec::new();
+        let mut start = from;
+        for _ in 0..PARALLEL_RANGES {
+            if start > head {
+                break;
             }
-            Err(e) => {
-                let old = self.chunk;
-                self.chunk = (self.chunk / 2).max(MIN_CHUNK);
-                tracing::warn!(%e, from, to, old_chunk = old, new_chunk = self.chunk,
-                    "get_logs failed, halving chunk");
-                return Ok(from);
-            }
-        };
-
-        for log in &logs {
-            self.apply_log(registry, log)
-                .await
-                .with_context(|| format!("applying log at block {:?}", log.block_number))?;
+            let to = (start + self.chunk - 1).min(head);
+            ranges.push((start, to));
+            start = to + 1;
         }
 
-        let boundary = with_deadline(async { self.provider.get_block_by_number(to.into()).await })
-            .await??
-            .context("boundary block missing")?;
-        self.save_state(address, to, boundary.header.hash.as_slice())
-            .await?;
-        tracing::info!(
-            registry = registry.name(),
-            from,
-            to,
-            logs = logs.len(),
-            "chunk ingested"
-        );
-        Ok(to + 1)
+        let fetches = ranges.iter().map(|(a, b)| {
+            let filter = Filter::new().address(address).from_block(*a).to_block(*b);
+            let provider = self.provider.clone();
+            async move { with_deadline(provider.get_logs(&filter)).await }
+        });
+        let results = futures::future::join_all(fetches).await;
+
+        let mut next = from;
+        let mut applied = 0usize;
+        for ((a, b), result) in ranges.iter().zip(results) {
+            let logs = match result {
+                Ok(Ok(logs)) => logs,
+                Ok(Err(e)) => {
+                    let old = self.chunk;
+                    self.chunk = (self.chunk / 2).max(MIN_CHUNK);
+                    tracing::warn!(%e, from = a, to = b, old_chunk = old, new_chunk = self.chunk,
+                        "get_logs failed, halving chunk");
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(%e, from = a, to = b, "get_logs deadline exceeded");
+                    break;
+                }
+            };
+            for log in &logs {
+                self.apply_log(registry, log)
+                    .await
+                    .with_context(|| format!("applying log at block {:?}", log.block_number))?;
+            }
+            applied += logs.len();
+            next = b + 1;
+        }
+
+        if next > from {
+            // Grow slowly after a fully successful round.
+            if next == start {
+                self.chunk = (self.chunk + self.chunk / 4).min(MAX_CHUNK);
+            }
+            let boundary =
+                with_deadline(async { self.provider.get_block_by_number((next - 1).into()).await })
+                    .await??
+                    .context("boundary block missing")?;
+            self.save_state(address, next - 1, boundary.header.hash.as_slice())
+                .await?;
+            tracing::info!(
+                registry = registry.name(),
+                from,
+                to = next - 1,
+                logs = applied,
+                "round ingested"
+            );
+        }
+        Ok(next)
     }
 
     async fn block_time(&mut self, number: u64) -> anyhow::Result<DateTime<Utc>> {

@@ -11,6 +11,7 @@ alloy = { version = "1", features = ["providers", "rpc-types", "sol-types", "tra
 anyhow.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 common = { path = "../common" }
+futures = "0.3"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2"] }
 sqlx.workspace = true
 tokio.workspace = true
