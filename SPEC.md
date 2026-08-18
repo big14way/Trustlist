@@ -458,7 +458,7 @@ A sampled measurement on 17 August 2026 (300 random agents, seed 8004, script pr
 
 ### Safety rules for the prober, non negotiable
 - Never follow redirects to private ranges. Block `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, and unique local addresses. This is an SSRF guard and judges who read code will look for it.
-- Rate limit per host to 1 request every 10 seconds via `governor`.
+- Rate limit per host to 1 request every 10 seconds via `governor` for ordinary hosts. Hosts serving more than 100 registrations (metadata farms, S3 buckets, IPFS gateways) get a pooled 5 requests per second instead: at 1 per 10 seconds a single 100,000 agent host would take 12 days per pass, slower than the registry grows. Still gentle for an API host, and documented on the methodology page.
 - Send a real `User-Agent` naming TrustList and a contact URL. We are a good citizen and we say so on the methodology page.
 - Respect `robots.txt` where the endpoint is a web page rather than an API.
 - Global concurrency cap, configurable, default 64.
