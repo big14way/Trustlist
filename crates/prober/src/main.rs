@@ -78,10 +78,15 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(workers, "card fetcher starting");
     loop {
         // Refresh which hosts count as bulk before each batch.
+        // Bulk means over one hundred registrations behind one host, whether
+        // as card URIs or as declared endpoints.
         let bulk_rows: Vec<(String,)> = sqlx::query_as(
             "select lower(substring(token_uri from 'https?://([^/]+)'))
              from agents where token_uri like 'http%'
-             group by 1 having count(*) > 100",
+             group by 1 having count(*) > 100
+             union
+             select host from probe_schedule where host is not null
+             group by host having count(*) > 100",
         )
         .fetch_all(&pool)
         .await?;
@@ -255,17 +260,30 @@ async fn probe_pass(
     if added > 0 {
         tracing::info!(added, "endpoints joined the probe schedule");
     }
+    let bulk_rows: Vec<(String,)> = sqlx::query_as(
+        "select lower(substring(token_uri from 'https?://([^/]+)'))
+         from agents where token_uri like 'http%'
+         group by 1 having count(*) > 100
+         union
+         select host from probe_schedule where host is not null
+         group by host having count(*) > 100",
+    )
+    .fetch_all(pool)
+    .await?;
+    if let Ok(mut set) = f.bulk_hosts.write() {
+        set.clear();
+        set.extend(bulk_rows.into_iter().map(|(h,)| h));
+    }
     let due = probe::due_batch(pool, 30_000).await?;
     if due.is_empty() {
         return Ok(());
     }
     let total = due.len();
 
-    // Cap any single host's share of a pass: a bulk host with tens of
-    // thousands of first time probes would otherwise hold the pass barrier
-    // for an hour while 30 minute cadence endpoints go stale. The remainder
-    // stays due and the next pass picks it up.
-    const PER_HOST_CAP: usize = 300;
+    // Cap any single host's share of a pass so every pass finishes in about
+    // two minutes: 300 for bulk hosts at their pooled rate, 12 for strict
+    // hosts at one per ten seconds. What does not fit stays due and the
+    // next pass picks it up.
     let mut by_host: std::collections::HashMap<String, Vec<(String, String)>> =
         std::collections::HashMap::new();
     for (agent_id, url) in due {
@@ -274,8 +292,18 @@ async fn probe_pass(
             .ok()
             .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
             .unwrap_or_default();
+        let cap = if f
+            .bulk_hosts
+            .read()
+            .map(|set| set.contains(&host))
+            .unwrap_or(false)
+        {
+            300
+        } else {
+            12
+        };
         let queue = by_host.entry(host).or_default();
-        if queue.len() < PER_HOST_CAP {
+        if queue.len() < cap {
             queue.push((agent_id, url));
         }
     }
