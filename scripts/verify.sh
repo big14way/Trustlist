@@ -48,9 +48,13 @@ if grep -rIn 'let _ = ' crates/*/src 2>/dev/null | grep -v '_ = tracing'; then
 fi
 
 say "5. unwrap budget in service code"
-COUNT=$(grep -rIn '\.unwrap()' \
-    crates/api/src crates/prober/src crates/indexer/src crates/trust/src 2>/dev/null \
-  | grep -v '/tests/' | grep -cv 'main.rs' || true)
+# Inline #[cfg(test)] modules are tests, not service code; awk drops
+# everything from that marker to end of file before counting.
+COUNT=$(find crates/api/src crates/prober/src crates/indexer/src crates/trust/src \
+    -name '*.rs' 2>/dev/null \
+  | grep -v '/tests/' | grep -v 'main.rs' \
+  | xargs -I{} awk '/#\[cfg\(test\)\]/{exit} /\.unwrap\(\)/{count++} END{print count+0}' {} \
+  | awk '{sum+=$1} END{print sum+0}')
 [ "${COUNT:-0}" -le 5 ] || fail "$COUNT unwraps in service code, budget is 5"
 
 say "6. typecheck, lint, build"
