@@ -15,8 +15,10 @@ export type AgentCard = {
   registered_at: string;
   registered_block: number;
   token_uri_scheme: string | null;
-  liveness: number | null;
-  uptime_7d: number | null;
+  liveness: string | null;
+  uptime_7d: string | null;
+  median_latency_ms: number | null;
+  probes_7d: number | null;
   trust: number | null;
   trust_confidence: number | null;
   feedback_total: number;
@@ -38,9 +40,19 @@ export type Stats = {
   cards_fetched: number;
   feedback: number;
   reviewers: number;
+  live: number;
+  flaky: number;
+  down: number;
+  measuring: number;
+  probes_total: number;
   indexed_to_block: number | null;
   indexed_at: string | null;
 };
+
+export type UptimeMap = Record<
+  string,
+  { hour: string; ok_share: number | null; probes: number }[]
+>;
 
 async function get<T>(path: string): Promise<T | null> {
   try {
@@ -62,4 +74,9 @@ export function fetchStats(): Promise<Stats | null> {
 export function fetchAgents(params: URLSearchParams): Promise<AgentList | null> {
   const qs = params.toString();
   return get<AgentList>(`/v1/agents${qs ? `?${qs}` : ""}`);
+}
+
+export function fetchUptime(ids: string[]): Promise<UptimeMap | null> {
+  if (ids.length === 0) return Promise.resolve({});
+  return get<UptimeMap>(`/v1/uptime?ids=${ids.join(",")}`);
 }

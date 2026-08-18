@@ -24,3 +24,4 @@ contracts/broadcast/
 
 # Local database volumes
 .pgdata/
+web/*.tsbuildinfo

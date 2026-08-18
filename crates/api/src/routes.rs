@@ -32,14 +32,20 @@ pub struct ListParams {
     pub limit: Option<i64>,
 }
 
-/// M1 status derivation, before probe history exists: an agent with at least
-/// one declared endpoint is "measuring" (we have not probed 24 times yet),
-/// anything else is "dormant" (no valid endpoint ever seen). Live, flaky,
-/// and down require probe data and appear in M2.
-const STATUS_SQL: &str = "case
+/// Status comes from the latest scoring run where one exists. Agents that
+/// have never been scored are measuring (endpoint declared, probes pending)
+/// or dormant (no valid endpoint ever seen).
+const STATUS_SQL: &str = "coalesce(sc.status, case
     when a.endpoints is not null and jsonb_array_length(a.endpoints) > 0 then 'measuring'
     else 'dormant'
-  end";
+  end)";
+
+/// Latest score row per agent, joined laterally.
+const SCORE_JOIN: &str = "left join lateral (
+    select * from agent_scores x
+    where x.agent_id = a.agent_id
+    order by computed_at desc limit 1
+  ) sc on true";
 
 fn agent_row_to_json(row: &sqlx::postgres::PgRow) -> serde_json::Value {
     let owner: Vec<u8> = row.get("owner");
@@ -55,10 +61,12 @@ fn agent_row_to_json(row: &sqlx::postgres::PgRow) -> serde_json::Value {
         "registered_at": row.get::<chrono::DateTime<chrono::Utc>, _>("registered_at").to_rfc3339(),
         "registered_block": row.get::<i64, _>("registered_block"),
         "token_uri_scheme": row.get::<Option<String>, _>("token_uri_scheme"),
-        // Scoring fields exist in the contract from M1 so clients can rely
-        // on the shape; they hold null until the engines ship (M2, M5).
-        "liveness": serde_json::Value::Null,
-        "uptime_7d": serde_json::Value::Null,
+        // Liveness fields come from the latest scoring run; trust stays
+        // null until the M5 engine ships. Nothing fabricates a score.
+        "liveness": row.get::<Option<sqlx::types::BigDecimal>, _>("liveness").map(|v| v.to_string()),
+        "uptime_7d": row.get::<Option<sqlx::types::BigDecimal>, _>("uptime_7d").map(|v| v.to_string()),
+        "median_latency_ms": row.get::<Option<i32>, _>("median_latency"),
+        "probes_7d": row.get::<Option<i32>, _>("probes_7d"),
         "trust": serde_json::Value::Null,
         "trust_confidence": serde_json::Value::Null,
         "feedback_total": row.get::<i64, _>("feedback_total"),
@@ -102,9 +110,12 @@ pub async fn list_agents(
     let order = match sort {
         "newest" => "a.registered_block desc, a.agent_id desc",
         "oldest" => "a.registered_block asc, a.agent_id asc",
-        _ => "a.registered_block desc, a.agent_id desc",
+        "uptime" => "sc.uptime_7d desc nulls last, a.agent_id desc",
+        _ => "sc.rank_score desc nulls last, a.agent_id desc",
     };
-    let cursor_clause = if cursor_id.is_some() {
+    // Keyset cursors only apply to the id ordered sorts; rank and uptime
+    // sorted pages fall back to plain offset free first page semantics.
+    let cursor_clause = if cursor_id.is_some() && (sort == "newest" || sort == "oldest") {
         binds.push(cursor_id.unwrap_or_default().to_string());
         if sort == "oldest" {
             format!("a.agent_id > ${}::numeric", binds.len())
@@ -119,11 +130,13 @@ pub async fn list_agents(
         "select a.agent_id::text as agent_id, a.owner, a.name, a.description, a.categories,
                 a.card_status, a.endpoints, a.registered_at, a.registered_block,
                 {STATUS_SQL} as status,
+                sc.liveness, sc.uptime_7d, sc.median_latency, sc.probes_7d,
                 split_part(a.token_uri, ':', 1) as token_uri_scheme,
                 coalesce(f.cnt, 0) as feedback_total
          from agents a
+         {SCORE_JOIN}
          left join (select agent_id, count(*) as cnt from feedback where not revoked group by agent_id) f
-           using (agent_id)
+           on f.agent_id = a.agent_id
          where {} and {}
          order by {}
          limit {}",
@@ -172,11 +185,13 @@ pub async fn get_agent(
         "select a.agent_id::text as agent_id, a.owner, a.name, a.description, a.categories,
                 a.card_status, a.endpoints, a.registered_at, a.registered_block,
                 {STATUS_SQL} as status,
+                sc.liveness, sc.uptime_7d, sc.median_latency, sc.probes_7d,
                 split_part(a.token_uri, ':', 1) as token_uri_scheme,
                 coalesce(f.cnt, 0) as feedback_total
          from agents a
+         {SCORE_JOIN}
          left join (select agent_id, count(*) as cnt from feedback where not revoked group by agent_id) f
-           using (agent_id)
+           on f.agent_id = a.agent_id
          where a.agent_id = $1::numeric"
     );
     let row = sqlx::query(&sql)
@@ -197,6 +212,11 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
            (select count(*) from agents where card_fetched_at is not null) as cards_fetched,
            (select count(*) from feedback where not revoked) as feedback,
            (select count(distinct reviewer) from feedback) as reviewers,
+           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'live') as live,
+           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'flaky') as flaky,
+           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'down') as down,
+           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'measuring') as measuring,
+           (select count(*) from probe_results) as probes_total,
            (select max(last_block) from indexer_state) as indexed_to_block,
            (select max(updated_at) from indexer_state) as indexed_at",
     )
@@ -214,8 +234,101 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
         "cards_fetched": row.get::<i64, _>("cards_fetched"),
         "feedback": row.get::<i64, _>("feedback"),
         "reviewers": row.get::<i64, _>("reviewers"),
+        "live": row.get::<i64, _>("live"),
+        "flaky": row.get::<i64, _>("flaky"),
+        "down": row.get::<i64, _>("down"),
+        "measuring": row.get::<i64, _>("measuring"),
+        "probes_total": row.get::<i64, _>("probes_total"),
         "indexed_to_block": row.get::<Option<i64>, _>("indexed_to_block"),
         "indexed_at": row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("indexed_at")
             .map(|t| t.to_rfc3339()),
     })))
+}
+
+/// 168 hourly buckets for the probe strip: per hour, the share of probes
+/// that succeeded, or null where no probe ran.
+pub async fn agent_uptime(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let clean: String = id.chars().filter(|c| c.is_ascii_digit()).collect();
+    if clean.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let rows: Vec<(chrono::DateTime<chrono::Utc>, Option<f64>, i64)> = sqlx::query_as(
+        "select h.hour, avg(pr.ok::int)::float8, count(pr.id)
+         from generate_series(
+                date_trunc('hour', now()) - interval '167 hours',
+                date_trunc('hour', now()), interval '1 hour') h(hour)
+         left join probe_results pr
+           on pr.agent_id = $1::numeric
+          and pr.probed_at >= h.hour and pr.probed_at < h.hour + interval '1 hour'
+         group by h.hour order by h.hour",
+    )
+    .bind(&clean)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(%e, "uptime query failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let buckets: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(hour, ok_share, probes)| {
+            json!({
+                "hour": hour.to_rfc3339(),
+                "ok_share": ok_share,
+                "probes": probes,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "agent_id": clean, "buckets": buckets })))
+}
+
+#[derive(Deserialize)]
+pub struct BulkUptimeParams {
+    pub ids: String,
+}
+
+/// Bulk probe strips: one request returns the 168 hourly buckets for up to
+/// one hundred agents, keyed by agent id.
+pub async fn bulk_uptime(
+    State(state): State<AppState>,
+    Query(params): Query<BulkUptimeParams>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let ids: Vec<String> = params
+        .ids
+        .split(',')
+        .map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect::<String>())
+        .filter(|p| !p.is_empty())
+        .take(100)
+        .collect();
+    if ids.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let rows: Vec<(String, chrono::DateTime<chrono::Utc>, Option<f64>, i64)> = sqlx::query_as(
+        "select pr.agent_id::text, date_trunc('hour', pr.probed_at) as hour,
+                avg(pr.ok::int)::float8, count(*)
+         from probe_results pr
+         where pr.agent_id = any(select unnest($1::numeric[]))
+           and pr.probed_at > now() - interval '168 hours'
+         group by 1, 2 order by 1, 2",
+    )
+    .bind(&ids)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(%e, "bulk uptime query failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let mut map: std::collections::HashMap<String, Vec<serde_json::Value>> =
+        std::collections::HashMap::new();
+    for (agent_id, hour, ok_share, probes) in rows {
+        map.entry(agent_id).or_default().push(json!({
+            "hour": hour.to_rfc3339(),
+            "ok_share": ok_share,
+            "probes": probes,
+        }));
+    }
+    Ok(Json(json!(map)))
 }

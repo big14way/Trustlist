@@ -1,6 +1,15 @@
-import { fetchAgents, fetchStats, type AgentCard } from "@/lib/api";
+import { CollapseCounter } from "@/components/CollapseCounter";
+import { ProbeStrip } from "@/components/ProbeStrip";
+import {
+  fetchAgents,
+  fetchStats,
+  fetchUptime,
+  type AgentCard,
+  type UptimeMap,
+} from "@/lib/api";
 
-// Data comes from our indexer at request time; never prerender stale counts.
+// Data comes from our indexer and prober at request time; never prerender
+// stale counts.
 export const dynamic = "force-dynamic";
 
 function StatusPill({ status }: { status: AgentCard["status"] }) {
@@ -20,8 +29,11 @@ function StatusPill({ status }: { status: AgentCard["status"] }) {
   );
 }
 
-function Card({ agent }: { agent: AgentCard }) {
+function Card({ agent, uptime }: { agent: AgentCard; uptime: UptimeMap }) {
   const date = new Date(agent.registered_at).toISOString().slice(0, 10);
+  const uptimePct = agent.uptime_7d
+    ? `${(parseFloat(agent.uptime_7d) * 100).toFixed(1)}%`
+    : "n/a";
   return (
     <li className="rounded-lg border border-dormant/40 bg-paper p-4">
       <div className="flex items-start justify-between gap-2">
@@ -33,22 +45,29 @@ function Card({ agent }: { agent: AgentCard }) {
       <p className="mt-1 line-clamp-2 min-h-10 text-sm text-ink/80">
         {agent.description ?? "No description in the agent card."}
       </p>
-      <p className="font-data mt-3 text-xs text-ink/70">
-        ID {agent.agent_id} · {date} ·{" "}
-        {agent.endpoints?.length
-          ? `${agent.endpoints.length} endpoint${agent.endpoints.length > 1 ? "s" : ""}`
-          : "no endpoints"}{" "}
-        · {agent.feedback_total} reviews
+      <div className="mt-3">
+        <ProbeStrip
+          buckets={uptime[agent.agent_id] ?? []}
+          label={agent.name ?? `Agent ${agent.agent_id}`}
+        />
+      </div>
+      <p className="font-data mt-2 text-xs text-ink/70">
+        UPTIME {uptimePct} · PROBES {agent.probes_7d ?? 0} · REVIEWS{" "}
+        {agent.feedback_total} · {date}
       </p>
     </li>
   );
 }
 
 export default async function Home() {
-  const [stats, agents] = await Promise.all([
-    fetchStats(),
-    fetchAgents(new URLSearchParams({ status: "measuring", limit: "24" })),
-  ]);
+  const stats = await fetchStats();
+  const agents = await fetchAgents(
+    new URLSearchParams({ sort: "rank", limit: "24" }),
+  );
+  const uptime =
+    (await fetchUptime(agents?.items.map((a) => a.agent_id) ?? [])) ?? {};
+
+  const answering = stats ? stats.live + stats.flaky : 0;
 
   return (
     <main className="mx-auto max-w-[1200px] px-8 py-16">
@@ -58,15 +77,30 @@ export default async function Home() {
       </h1>
 
       {stats ? (
-        <p className="mt-4 max-w-2xl text-base">
-          <span className="font-data">{stats.registered.toLocaleString()}</span>{" "}
-          agents indexed from the ERC-8004 registry so far,{" "}
-          <span className="font-data">
-            {stats.with_endpoints.toLocaleString()}
-          </span>{" "}
-          declare a service endpoint. Probing begins in the next milestone;
-          until we have probed, nothing here claims to be alive.
-        </p>
+        answering > 0 ? (
+          <p className="mt-4 max-w-2xl text-base">
+            <CollapseCounter
+              registered={stats.registered}
+              answering={answering}
+            />{" "}
+            of{" "}
+            <span className="font-data">{stats.registered.toLocaleString()}</span>{" "}
+            registered agents answer when probed. We check every 30 minutes and
+            keep the history.
+          </p>
+        ) : (
+          <p className="mt-4 max-w-2xl text-base">
+            <span className="font-data">{stats.registered.toLocaleString()}</span>{" "}
+            agents registered.{" "}
+            <span className="font-data">
+              {stats.with_endpoints.toLocaleString()}
+            </span>{" "}
+            declare an endpoint, and we are probing every one of them every 30
+            minutes ({stats.probes_total.toLocaleString()} probes recorded so
+            far). Statuses appear once an agent has enough probes to judge
+            fairly; until then nothing here claims to be alive.
+          </p>
+        )
       ) : (
         <p className="mt-4 max-w-2xl text-base text-flag">
           The API is not reachable. Counts and agents cannot be shown, and we
@@ -77,34 +111,34 @@ export default async function Home() {
       {stats?.indexed_to_block ? (
         <p className="font-data mt-2 text-xs text-dormant">
           indexed to block {stats.indexed_to_block.toLocaleString()}
-          {stats.indexed_at ? ` at ${stats.indexed_at.slice(0, 19)}Z` : ""}
-          {" · backfill in progress, the count grows until it reaches head"}
+          {stats.indexed_at ? ` at ${stats.indexed_at.slice(0, 19)}Z` : ""} ·
+          live {stats.live} · flaky {stats.flaky} · down {stats.down} ·
+          measuring {stats.measuring}
         </p>
       ) : null}
 
       <section aria-label="Agents" className="mt-12">
         <p className="eyebrow text-dormant">
-          AGENTS WITH A DECLARED ENDPOINT, NEWEST FIRST
+          AGENTS WITH DECLARED ENDPOINTS, RANKED
         </p>
         {agents && agents.items.length > 0 ? (
           <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {agents.items.map((a) => (
-              <Card key={a.agent_id} agent={a} />
+              <Card key={a.agent_id} agent={a} uptime={uptime} />
             ))}
           </ul>
         ) : (
           <p className="mt-4 text-sm text-ink/70">
-            No agents with endpoints indexed yet. The backfill is running;
-            reload in a minute.
+            Nothing to show yet. The prober is measuring; reload in a minute.
           </p>
         )}
       </section>
 
       <footer className="mt-16 border-t border-dormant/40 pt-6">
         <p className="font-data text-xs text-dormant">
-          M1: index and see. Probing, trust scoring, and hiring arrive in the
-          milestones behind this page. Every number above is a database read
-          from our own chain indexer.
+          M2: probing and liveness. Trust scoring and hiring arrive in the
+          milestones behind this page. Every number and every probe cell above
+          is a database read from our own instruments.
         </p>
       </footer>
     </main>

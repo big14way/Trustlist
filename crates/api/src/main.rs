@@ -25,7 +25,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/health", get(routes::health))
         .route("/v1/agents", get(routes::list_agents))
         .route("/v1/agents/{id}", get(routes::get_agent))
+        .route("/v1/agents/{id}/uptime", get(routes::agent_uptime))
         .route("/v1/stats", get(routes::stats))
+        .route("/v1/uptime", get(routes::bulk_uptime))
         .with_state(AppState { pool })
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());
