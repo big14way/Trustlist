@@ -21,6 +21,8 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
+    env:
+      DATABASE_URL: postgres://trustlist:trustlist@localhost:5432/trustlist
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,9 +39,28 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install web dependencies
         run: cd web && npm ci
+      - name: Start the api (runs migrations on boot)
+        run: |
+          set -a && source .env.example && set +a
+          export DATABASE_URL=postgres://trustlist:trustlist@localhost:5432/trustlist
+          cargo build --release -p api
+          nohup cargo run --release -p api > /tmp/api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/v1/health >/dev/null && break; sleep 2
+          done
+          curl -sf http://localhost:8080/v1/health
+      - name: Load the seed (real indexed rows, bounded sample)
+        run: bash scripts/load_seed.sh
+      - name: Build and start the web app
+        run: |
+          cd web
+          npm run build
+          nohup npx next start > /tmp/web.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:3000/ && break; sleep 2
+          done
+          curl -sf -o /dev/null http://localhost:3000/
       - name: Run the gate
-        env:
-          DATABASE_URL: postgres://trustlist:trustlist@localhost:5432/trustlist
         run: |
           set -a && source .env.example && set +a
           export DATABASE_URL=postgres://trustlist:trustlist@localhost:5432/trustlist
