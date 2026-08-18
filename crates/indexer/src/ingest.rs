@@ -199,7 +199,6 @@ impl<P: Provider + Clone> Ingestor<P> {
     /// Fetch timestamps for every distinct block in a batch of logs, sixteen
     /// at a time, so dense rounds are not serialised on one call at a time.
     async fn prefetch_block_times(&mut self, logs: &[Log]) -> anyhow::Result<()> {
-        use futures::StreamExt;
         let mut missing: Vec<u64> = logs
             .iter()
             .filter_map(|l| l.block_number)
@@ -210,22 +209,31 @@ impl<P: Provider + Clone> Ingestor<P> {
         if missing.is_empty() {
             return Ok(());
         }
-        let provider = self.provider.clone();
-        let mut stream = futures::stream::iter(missing.into_iter().map(|n| {
-            let provider = provider.clone();
-            async move {
-                let block =
-                    with_deadline(async { provider.get_block_by_number(n.into()).await }).await??;
-                anyhow::Ok((n, block))
+        // One JSON-RPC batch per 40 headers: dense rounds need hundreds of
+        // timestamps and per-request fetching both throttles and crawls.
+        for group in missing.chunks(40) {
+            let client = self.provider.client();
+            let mut batch = alloy::rpc::client::BatchRequest::new(client);
+            let mut waiters = Vec::with_capacity(group.len());
+            for n in group {
+                let fut = batch
+                    .add_call::<_, Option<alloy::rpc::types::Block>>(
+                        "eth_getBlockByNumber",
+                        &(alloy::eips::BlockNumberOrTag::Number(*n), false),
+                    )
+                    .context("adding batch call")?;
+                waiters.push((*n, fut));
             }
-        }))
-        .buffer_unordered(16);
-        while let Some(result) = stream.next().await {
-            let (n, block) = result?;
-            let block = block.with_context(|| format!("block {n} missing"))?;
-            let t = DateTime::from_timestamp(block.header.timestamp as i64, 0)
-                .context("timestamp out of range")?;
-            self.block_times.insert(n, t);
+            with_deadline(batch.send()).await??;
+            for (n, fut) in waiters {
+                let block = fut
+                    .await
+                    .with_context(|| format!("batched header {n}"))?
+                    .with_context(|| format!("block {n} missing"))?;
+                let t = DateTime::from_timestamp(block.header.timestamp as i64, 0)
+                    .context("timestamp out of range")?;
+                self.block_times.insert(n, t);
+            }
         }
         if self.block_times.len() > 100_000 {
             self.block_times.clear();
