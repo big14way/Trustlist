@@ -131,7 +131,9 @@ impl<P: Provider> Ingestor<P> {
         let logs = match with_deadline(self.provider.get_logs(&filter))
             .await
             .unwrap_or_else(|e| {
-                Err(alloy::transports::TransportErrorKind::custom_str(&e.to_string()).into())
+                Err(alloy::transports::TransportErrorKind::custom_str(
+                    &e.to_string(),
+                ))
             }) {
             Ok(logs) => {
                 // Grow slowly after success, halve on failure.
