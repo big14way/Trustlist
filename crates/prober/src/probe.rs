@@ -119,12 +119,13 @@ pub async fn record(
     Ok(())
 }
 
-/// Claim a batch of due endpoints, skewed toward the longest overdue.
+/// Claim a batch of due endpoints in random order: a batch dominated by one
+/// bulk host would park every worker behind that host's shared rate limit.
 pub async fn due_batch(pool: &PgPool, limit: i64) -> anyhow::Result<Vec<(String, String)>> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "select agent_id::text, endpoint_url from probe_schedule
          where next_due <= now()
-         order by next_due
+         order by random()
          limit $1",
     )
     .bind(limit)
