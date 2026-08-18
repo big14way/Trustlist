@@ -9,6 +9,16 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::future::Future;
+use std::time::Duration;
+
+/// Hard ceiling on any single rpc call. The transport has its own timeout,
+/// but a hung connection must never stall ingestion for minutes.
+async fn with_deadline<T, F: Future<Output = T>>(fut: F) -> anyhow::Result<T> {
+    tokio::time::timeout(Duration::from_secs(45), fut)
+        .await
+        .map_err(|_| anyhow::anyhow!("rpc call exceeded 45s deadline"))
+}
 
 /// Confirmation depth: stay this many blocks behind head so shallow reorgs
 /// never land in the database.
@@ -95,10 +105,12 @@ impl<P: Provider> Ingestor<P> {
         let Some((block, stored_hash)) = row else {
             return Ok(None);
         };
-        let on_chain = self
-            .provider
-            .get_block_by_number((block as u64).into())
-            .await?;
+        let on_chain = with_deadline(async {
+            self.provider
+                .get_block_by_number((block as u64).into())
+                .await
+        })
+        .await??;
         match on_chain {
             Some(b) if b.header.hash.as_slice() == stored_hash.as_slice() => Ok(None),
             _ => Ok(Some((block as u64).saturating_sub(100))),
@@ -116,7 +128,11 @@ impl<P: Provider> Ingestor<P> {
     ) -> anyhow::Result<u64> {
         let to = (from + self.chunk - 1).min(head);
         let filter = Filter::new().address(address).from_block(from).to_block(to);
-        let logs = match self.provider.get_logs(&filter).await {
+        let logs = match with_deadline(self.provider.get_logs(&filter))
+            .await
+            .unwrap_or_else(|e| {
+                Err(alloy::transports::TransportErrorKind::custom_str(&e.to_string()).into())
+            }) {
             Ok(logs) => {
                 // Grow slowly after success, halve on failure.
                 self.chunk = (self.chunk + self.chunk / 4).min(MAX_CHUNK);
@@ -137,10 +153,8 @@ impl<P: Provider> Ingestor<P> {
                 .with_context(|| format!("applying log at block {:?}", log.block_number))?;
         }
 
-        let boundary = self
-            .provider
-            .get_block_by_number(to.into())
-            .await?
+        let boundary = with_deadline(async { self.provider.get_block_by_number(to.into()).await })
+            .await??
             .context("boundary block missing")?;
         self.save_state(address, to, boundary.header.hash.as_slice())
             .await?;
@@ -158,10 +172,8 @@ impl<P: Provider> Ingestor<P> {
         if let Some(t) = self.block_times.get(&number) {
             return Ok(*t);
         }
-        let block = self
-            .provider
-            .get_block_by_number(number.into())
-            .await?
+        let block = with_deadline(async { self.provider.get_block_by_number(number.into()).await })
+            .await??
             .with_context(|| format!("block {number} missing"))?;
         let t = DateTime::from_timestamp(block.header.timestamp as i64, 0)
             .context("timestamp out of range")?;

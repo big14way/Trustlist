@@ -19,9 +19,14 @@ const REPUTATION_DEPLOY_BLOCK: u64 = 79_027_282;
 const USER_AGENT: &str = "TrustList/0.1 (+https://github.com/big14way/Trustlist)";
 
 fn make_provider(url: &str) -> anyhow::Result<impl Provider + Clone> {
+    // http1 only and no idle reuse: bloXroute tarpits reused connections
+    // under sustained load, which stalled requests past any timeout.
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
+        .http1_only()
+        .pool_max_idle_per_host(0)
         .build()?;
     let parsed: url::Url = url.parse().context("rpc url")?;
     let transport = alloy::transports::http::Http::with_client(client, parsed);
