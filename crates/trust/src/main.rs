@@ -6,11 +6,11 @@ use common::config::Config;
 use sqlx::PgPool;
 use std::time::Duration;
 
-/// SPEC.md Section 12: liveness = 100 * (0.55*uptime_7d + 0.30*card_quality
-/// + 0.15*latency_factor). Status buckets: Live >= 0.9, Flaky 0.5 to 0.9,
-/// Down < 0.5, Dormant (no valid endpoint), Measuring (under the minimum
-/// probe count: 24 at the 30 minute cadence, 6 for daily probed web only
-/// agents, documented on the methodology page).
+/// SPEC.md Section 12. liveness combines uptime over seven days with card
+/// quality and a latency factor. Status buckets by uptime: live at 0.9 and
+/// above, flaky between 0.5 and 0.9, down below 0.5, dormant with no valid
+/// endpoint, measuring while under the minimum probe count (24 at the 30
+/// minute cadence, 6 for daily probed web only agents).
 const SCORE_SQL: &str = "
 insert into agent_scores (
   agent_id, computed_at, liveness, uptime_7d, median_latency, trust,
