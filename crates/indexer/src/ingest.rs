@@ -175,10 +175,9 @@ impl<P: Provider + Clone> Ingestor<P> {
         }
 
         if next > from {
-            // Grow slowly after a fully successful round.
-            if next == start {
-                self.chunk = (self.chunk + self.chunk / 4).min(MAX_CHUNK);
-            }
+            // Any forward progress earns growth back; a chunk pinned at the
+            // minimum after a throttle window would crawl forever otherwise.
+            self.chunk = (self.chunk + self.chunk / 4).min(MAX_CHUNK);
             let boundary =
                 with_deadline(async { self.provider.get_block_by_number((next - 1).into()).await })
                     .await??
