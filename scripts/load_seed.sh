@@ -67,4 +67,43 @@ from seed_state
 on conflict (registry) do nothing;
 drop table seed_state;"
 
+if [ -f "$SEED/probe_results.tsv.gz" ]; then
+  run_psql -c "
+  create table if not exists seed_probes (
+    agent_id numeric, endpoint_url text, probed_at timestamptz, ok boolean,
+    http_status int, latency_ms int, failure_kind text, body_hash_hex text
+  );
+  truncate seed_probes;"
+  gunzip -c "$SEED/probe_results.tsv.gz" | run_psql -c "\\copy seed_probes from pstdin"
+  run_psql -c "
+  insert into probe_results (agent_id, endpoint_url, probed_at, ok, http_status, latency_ms, failure_kind, body_hash)
+  select agent_id, endpoint_url, probed_at, ok, http_status, latency_ms,
+         failure_kind, decode(nullif(body_hash_hex,''),'hex')
+  from seed_probes p
+  where exists (select 1 from agents a where a.agent_id = p.agent_id);
+  drop table seed_probes;"
+fi
+
+if [ -f "$SEED/agent_scores.tsv.gz" ]; then
+  run_psql -c "
+  create table if not exists seed_scores (
+    agent_id numeric, computed_at timestamptz, liveness numeric, uptime_7d numeric,
+    median_latency int, feedback_total int, feedback_kept int, jobs_completed int,
+    jobs_disputed int, rank_score numeric, status text, probes_7d int, min_probes int
+  );
+  truncate seed_scores;"
+  gunzip -c "$SEED/agent_scores.tsv.gz" | run_psql -c "\\copy seed_scores from pstdin"
+  run_psql -c "
+  insert into agent_scores (agent_id, computed_at, liveness, uptime_7d, median_latency,
+                            feedback_total, feedback_kept, jobs_completed, jobs_disputed,
+                            rank_score, status, probes_7d, min_probes)
+  select s.agent_id, s.computed_at, s.liveness, s.uptime_7d, s.median_latency,
+         s.feedback_total, s.feedback_kept, s.jobs_completed, s.jobs_disputed,
+         s.rank_score, s.status, s.probes_7d, s.min_probes
+  from seed_scores s
+  where exists (select 1 from agents a where a.agent_id = s.agent_id)
+  on conflict (agent_id, computed_at) do nothing;
+  drop table seed_scores;"
+fi
+
 echo "seed loaded"

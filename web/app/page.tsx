@@ -61,8 +61,10 @@ function Card({ agent, uptime }: { agent: AgentCard; uptime: UptimeMap }) {
 
 export default async function Home() {
   const stats = await fetchStats();
+  // Default marketplace filter: only agents whose status is earned by
+  // enough probes appear. The measuring majority is a count, not a listing.
   const agents = await fetchAgents(
-    new URLSearchParams({ sort: "rank", limit: "24" }),
+    new URLSearchParams({ sort: "rank", limit: "24", status: "live,flaky" }),
   );
   const uptime =
     (await fetchUptime(agents?.items.map((a) => a.agent_id) ?? [])) ?? {};
@@ -119,7 +121,8 @@ export default async function Home() {
 
       <section aria-label="Agents" className="mt-12">
         <p className="eyebrow text-dormant">
-          AGENTS WITH DECLARED ENDPOINTS, RANKED
+          LIVE AND FLAKY AGENTS, RANKED. MEASURING AGENTS JOIN WHEN THEY EARN
+          A STATUS.
         </p>
         {agents && agents.items.length > 0 ? (
           <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -103,8 +103,18 @@ pub async fn list_agents(
         wheres.push(format!("${} = any(a.categories)", binds.len()));
     }
     if let Some(status) = &params.status {
-        binds.push(status.clone());
-        wheres.push(format!("({STATUS_SQL}) = ${}", binds.len()));
+        // Comma separated lists are allowed: status=live,flaky is the
+        // default marketplace filter per SPEC.md Section 13 step 4.
+        let list: Vec<String> = status
+            .split(',')
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        binds.push(list.join(","));
+        wheres.push(format!(
+            "({STATUS_SQL}) = any(string_to_array(${}, ','))",
+            binds.len()
+        ));
     }
 
     let order = match sort {

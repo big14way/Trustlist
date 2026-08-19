@@ -22,6 +22,7 @@ PSQL=(docker compose exec -T db psql -U trustlist -d trustlist -v ON_ERROR_STOP=
     select agent_id from agents where card_fetched_at is not null
     order by registered_block desc limit 4000
   ) or agent_id in (select distinct agent_id from feedback)
+    or agent_id in (select agent_id from probe_results group by agent_id having count(*) >= 24)
 ) to stdout" | gzip > "$OUT/agents.tsv.gz"
 
 "${PSQL[@]}" -c "\\copy (
@@ -39,6 +40,22 @@ PSQL=(docker compose exec -T db psql -U trustlist -d trustlist -v ON_ERROR_STOP=
   select encode(registry,'hex'), last_block, encode(last_block_hash,'hex'), updated_at
   from indexer_state
 ) to stdout" > "$OUT/indexer_state.tsv"
+
+# Probe history for every agent with 24 or more probes plus the latest score
+# rows, so the M2 gate checks and status buckets work against the seed.
+"${PSQL[@]}" -c "\\copy (
+  select agent_id, endpoint_url, probed_at, ok, http_status, latency_ms,
+         failure_kind, encode(body_hash,'hex')
+  from probe_results
+  where agent_id in (select agent_id from probe_results group by agent_id having count(*) >= 24)
+) to stdout" | gzip > "$OUT/probe_results.tsv.gz"
+
+"${PSQL[@]}" -c "\\copy (
+  select distinct on (agent_id) agent_id, computed_at, liveness, uptime_7d,
+         median_latency, feedback_total, feedback_kept, jobs_completed,
+         jobs_disputed, rank_score, status, probes_7d, min_probes
+  from agent_scores order by agent_id, computed_at desc
+) to stdout" | gzip > "$OUT/agent_scores.tsv.gz"
 
 ls -la "$OUT"
 echo "seed written"
