@@ -66,6 +66,14 @@ fn is_private(ip: IpAddr) -> bool {
     }
 }
 
+/// Guard verdicts per host, cached for ten minutes: the guard resolves DNS
+/// and an uncached implementation doubles every probe's lookups, which
+/// melted the local resolver at high concurrency.
+type GuardVerdict = (Result<(), FailureKind>, std::time::Instant);
+type GuardCache = std::sync::Mutex<std::collections::HashMap<String, GuardVerdict>>;
+static GUARD_CACHE: std::sync::LazyLock<GuardCache> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
 /// Resolve the host and reject any URL whose addresses include a private
 /// range. Returns Err(kind) rather than anyhow so callers can record it.
 async fn guard_url(url: &Url) -> Result<(), FailureKind> {
@@ -73,21 +81,41 @@ async fn guard_url(url: &Url) -> Result<(), FailureKind> {
         return Err(FailureKind::BadUrl);
     }
     let host = url.host_str().ok_or(FailureKind::BadUrl)?.to_string();
+    let cache_key = host.clone();
+    if let Ok(cache) = GUARD_CACHE.lock() {
+        if let Some((verdict, at)) = cache.get(&cache_key) {
+            if at.elapsed() < Duration::from_secs(600) {
+                return *verdict;
+            }
+        }
+    }
     let port = url.port_or_known_default().unwrap_or(443);
     let addrs = tokio::net::lookup_host((host.as_str(), port))
         .await
         .map_err(|_| FailureKind::Dns)?;
     let mut any = false;
+    let mut verdict: Result<(), FailureKind> = Ok(());
     for addr in addrs {
         any = true;
         if is_private(addr.ip()) {
-            return Err(FailureKind::PrivateBlocked);
+            verdict = Err(FailureKind::PrivateBlocked);
+            break;
         }
     }
     if !any {
-        return Err(FailureKind::Dns);
+        verdict = Err(FailureKind::Dns);
     }
-    Ok(())
+    // Dns failures are not cached: transient resolver trouble must not
+    // stick to a host for ten minutes.
+    if verdict != Err(FailureKind::Dns) {
+        if let Ok(mut cache) = GUARD_CACHE.lock() {
+            if cache.len() > 10_000 {
+                cache.clear();
+            }
+            cache.insert(cache_key, (verdict, std::time::Instant::now()));
+        }
+    }
+    verdict
 }
 
 pub fn build_client() -> anyhow::Result<reqwest::Client> {

@@ -266,7 +266,16 @@ pub async fn agent_uptime(
         return Err(StatusCode::BAD_REQUEST);
     }
     let rows: Vec<(chrono::DateTime<chrono::Utc>, Option<f64>, i64)> = sqlx::query_as(
-        "select h.hour, avg(pr.ok::int)::float8, count(pr.id)
+        "with observer_outage as (
+           select date_trunc('hour', probed_at) as h from probe_results
+           where probed_at > now() - interval '7 days'
+           group by 1 having count(*) > 100 and avg(ok::int) < 0.05
+         )
+         select h.hour,
+                case when h.hour in (select h from observer_outage) then null
+                     else avg(pr.ok::int)::float8 end,
+                case when h.hour in (select h from observer_outage) then 0
+                     else count(pr.id) end
          from generate_series(
                 date_trunc('hour', now()) - interval '167 hours',
                 date_trunc('hour', now()), interval '1 hour') h(hour)
@@ -317,11 +326,17 @@ pub async fn bulk_uptime(
         return Err(StatusCode::BAD_REQUEST);
     }
     let rows: Vec<(String, chrono::DateTime<chrono::Utc>, Option<f64>, i64)> = sqlx::query_as(
-        "select pr.agent_id::text, date_trunc('hour', pr.probed_at) as hour,
+        "with observer_outage as (
+           select date_trunc('hour', probed_at) as h from probe_results
+           where probed_at > now() - interval '7 days'
+           group by 1 having count(*) > 100 and avg(ok::int) < 0.05
+         )
+         select pr.agent_id::text, date_trunc('hour', pr.probed_at) as hour,
                 avg(pr.ok::int)::float8, count(*)
          from probe_results pr
          where pr.agent_id = any(select unnest($1::numeric[]))
            and pr.probed_at > now() - interval '168 hours'
+           and date_trunc('hour', pr.probed_at) not in (select h from observer_outage)
          group by 1, 2 order by 1, 2",
     )
     .bind(&ids)

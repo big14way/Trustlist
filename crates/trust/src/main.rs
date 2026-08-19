@@ -12,6 +12,15 @@ use std::time::Duration;
 /// endpoint, measuring while under the minimum probe count (24 at the 30
 /// minute cadence, 6 for daily probed web only agents).
 const SCORE_SQL: &str = "
+with observer_outage as (
+  -- Hours where nearly every probe we sent failed are our outage, not
+  -- theirs: excluded from uptime, shown as no data, never deleted.
+  select date_trunc('hour', probed_at) as h
+  from probe_results
+  where probed_at > now() - interval '7 days'
+  group by 1
+  having count(*) > 100 and avg(ok::int) < 0.05
+)
 insert into agent_scores (
   agent_id, computed_at, liveness, uptime_7d, median_latency, trust,
   trust_confidence, raw_star_avg, feedback_total, feedback_kept,
@@ -61,6 +70,7 @@ left join lateral (
          greatest(0, least(1, 1 - (percentile_cont(0.5) within group (order by latency_ms) / 5000.0)))::float8 as latency_factor
   from probe_results pr
   where pr.agent_id = s.agent_id and pr.probed_at > now() - interval '7 days'
+    and date_trunc('hour', pr.probed_at) not in (select h from observer_outage)
 ) p on true
 left join lateral (
   select count(*) as total from feedback fb
