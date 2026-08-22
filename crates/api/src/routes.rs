@@ -357,3 +357,140 @@ pub async fn bulk_uptime(
     }
     Ok(Json(json!(map)))
 }
+
+/// Raw feedback for an agent, newest first. Reviewer independence weights
+/// and the kept/discarded split arrive with the trust engine in M5; until
+/// then this reports what the registry says and nothing more, and
+/// `kept` is null rather than a guess.
+pub async fn agent_reviews(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let clean: String = id.chars().filter(|c| c.is_ascii_digit()).collect();
+    if clean.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let rows = sqlx::query(
+        "select reviewer, value, value_decimals, tags, uri, revoked,
+                block_time, tx_hash
+         from feedback
+         where agent_id = $1::numeric
+         order by block_time desc
+         limit 200",
+    )
+    .bind(&clean)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(%e, "reviews query failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let items: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            let reviewer: Vec<u8> = r.get("reviewer");
+            let tx: Vec<u8> = r.get("tx_hash");
+            let value: sqlx::types::BigDecimal = r.get("value");
+            json!({
+                "reviewer": format!("0x{}", hex_lower(&reviewer)),
+                "value": value.to_string(),
+                "value_decimals": r.get::<i32, _>("value_decimals"),
+                "tags": r.get::<Vec<String>, _>("tags"),
+                "uri": r.get::<Option<String>, _>("uri"),
+                "revoked": r.get::<bool, _>("revoked"),
+                "block_time": r.get::<chrono::DateTime<chrono::Utc>, _>("block_time").to_rfc3339(),
+                "tx_hash": format!("0x{}", hex_lower(&tx)),
+                // Reviewer independence weighting ships in M5.
+                "weight": serde_json::Value::Null,
+                "flags": serde_json::Value::Array(vec![]),
+            })
+        })
+        .collect();
+
+    // Distinct reviewers matters more than review count on this registry:
+    // 29,511 reviews were written by 105 addresses.
+    let summary = sqlx::query(
+        "select count(*) as total,
+                count(*) filter (where revoked) as revoked,
+                count(distinct reviewer) as reviewers
+         from feedback where agent_id = $1::numeric",
+    )
+    .bind(&clean)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(json!({
+        "agent_id": clean,
+        "total": summary.get::<i64, _>("total"),
+        "revoked": summary.get::<i64, _>("revoked"),
+        "distinct_reviewers": summary.get::<i64, _>("reviewers"),
+        "kept": serde_json::Value::Null,
+        "items": items,
+    })))
+}
+
+/// Per endpoint probe state for an agent: what we last saw at each declared
+/// URL, plus its rolling success rate. This is what turns "the agent is
+/// down" into "this specific endpoint times out after 8s".
+pub async fn agent_endpoints(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let clean: String = id.chars().filter(|c| c.is_ascii_digit()).collect();
+    if clean.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let rows = sqlx::query(
+        "select s.endpoint_url, s.kind, s.cadence_secs, s.next_due,
+                last.probed_at, last.ok, last.http_status, last.latency_ms,
+                last.failure_kind,
+                agg.probes, agg.ok_count
+         from probe_schedule s
+         left join lateral (
+           select probed_at, ok, http_status, latency_ms, failure_kind
+           from probe_results r
+           where r.agent_id = s.agent_id and r.endpoint_url = s.endpoint_url
+           order by probed_at desc limit 1
+         ) last on true
+         left join lateral (
+           select count(*) as probes, count(*) filter (where ok) as ok_count
+           from probe_results r
+           where r.agent_id = s.agent_id and r.endpoint_url = s.endpoint_url
+             and r.probed_at > now() - interval '7 days'
+         ) agg on true
+         where s.agent_id = $1::numeric
+         order by s.kind, s.endpoint_url",
+    )
+    .bind(&clean)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(%e, "endpoints query failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let items: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            let probes = r.get::<Option<i64>, _>("probes").unwrap_or(0);
+            let ok_count = r.get::<Option<i64>, _>("ok_count").unwrap_or(0);
+            json!({
+                "url": r.get::<String, _>("endpoint_url"),
+                "kind": r.get::<String, _>("kind"),
+                "cadence_secs": r.get::<i32, _>("cadence_secs"),
+                "last_probed_at": r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("probed_at")
+                    .map(|t| t.to_rfc3339()),
+                "last_ok": r.get::<Option<bool>, _>("ok"),
+                "last_http_status": r.get::<Option<i32>, _>("http_status"),
+                "last_latency_ms": r.get::<Option<i32>, _>("latency_ms"),
+                "last_failure_kind": r.get::<Option<String>, _>("failure_kind"),
+                "probes_7d": probes,
+                "ok_7d": ok_count,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({ "agent_id": clean, "items": items })))
+}

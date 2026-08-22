@@ -80,3 +80,63 @@ export function fetchUptime(ids: string[]): Promise<UptimeMap | null> {
   if (ids.length === 0) return Promise.resolve({});
   return get<UptimeMap>(`/v1/uptime?ids=${ids.join(",")}`);
 }
+
+export type EndpointState = {
+  url: string;
+  kind: string;
+  cadence_secs: number;
+  last_probed_at: string | null;
+  last_ok: boolean | null;
+  last_http_status: number | null;
+  last_latency_ms: number | null;
+  last_failure_kind: string | null;
+  probes_7d: number;
+  ok_7d: number;
+};
+
+export type Review = {
+  reviewer: string;
+  value: string;
+  value_decimals: number;
+  tags: string[];
+  uri: string | null;
+  revoked: boolean;
+  block_time: string;
+  tx_hash: string;
+  weight: number | null;
+  flags: string[];
+};
+
+export type Reviews = {
+  agent_id: string;
+  total: number;
+  revoked: number;
+  distinct_reviewers: number;
+  kept: number | null;
+  items: Review[];
+};
+
+export type UptimeBuckets = {
+  agent_id: string;
+  buckets: { hour: string; ok_share: number | null; probes: number }[];
+};
+
+export function fetchAgent(id: string): Promise<AgentCard | null> {
+  return get<AgentCard>(`/v1/agents/${encodeURIComponent(id)}`);
+}
+
+export function fetchAgentUptime(id: string): Promise<UptimeBuckets | null> {
+  return get<UptimeBuckets>(`/v1/agents/${encodeURIComponent(id)}/uptime`);
+}
+
+export function fetchAgentReviews(id: string): Promise<Reviews | null> {
+  return get<Reviews>(`/v1/agents/${encodeURIComponent(id)}/reviews`);
+}
+
+export function fetchAgentEndpoints(
+  id: string,
+): Promise<{ agent_id: string; items: EndpointState[] } | null> {
+  return get<{ agent_id: string; items: EndpointState[] }>(
+    `/v1/agents/${encodeURIComponent(id)}/endpoints`,
+  );
+}

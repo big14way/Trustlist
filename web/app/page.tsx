@@ -35,10 +35,15 @@ function Card({ agent, uptime }: { agent: AgentCard; uptime: UptimeMap }) {
     ? `${(parseFloat(agent.uptime_7d) * 100).toFixed(1)}%`
     : "n/a";
   return (
-    <li className="rounded-lg border border-dormant/40 bg-paper p-4">
+    <li className="rounded-lg border border-dormant/40 bg-paper p-4 transition-colors hover:border-ink/40">
       <div className="flex items-start justify-between gap-2">
         <h2 className="font-display text-lg leading-tight">
-          {agent.name ?? `Agent #${agent.agent_id}`}
+          <a
+            href={`/agents/${agent.agent_id}`}
+            className="hover:underline focus-visible:underline"
+          >
+            {agent.name ?? `Agent #${agent.agent_id}`}
+          </a>
         </h2>
         <StatusPill status={agent.status} />
       </div>
