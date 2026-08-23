@@ -68,6 +68,9 @@ fi
 
 say "7. tests"
 cargo test --workspace
+# Our own reference agents ship with the product, so their logic is tested
+# with everything else.
+bash scripts/test_agents.sh
 ( cd contracts && forge test -vv )
 if find contracts/src -name '*.sol' | grep -q .; then
   # SPEC.md Section 14 sets the bar on src/, the code we actually ship.

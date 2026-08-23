@@ -32,6 +32,7 @@ check:
 	cargo test --workspace
 	cd contracts && forge test
 	cd web && npx tsc --noEmit
+	bash scripts/test_agents.sh
 
 e2e:
 	@set -a; . ./.devchain.env; set +a; \
