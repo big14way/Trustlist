@@ -63,8 +63,10 @@ fn agent_row_to_json(row: &sqlx::postgres::PgRow) -> serde_json::Value {
         "token_uri_scheme": row.get::<Option<String>, _>("token_uri_scheme"),
         // Liveness fields come from the latest scoring run; trust stays
         // null until the M5 engine ships. Nothing fabricates a score.
-        "liveness": row.get::<Option<sqlx::types::BigDecimal>, _>("liveness").map(|v| v.to_string()),
-        "uptime_7d": row.get::<Option<sqlx::types::BigDecimal>, _>("uptime_7d").map(|v| v.to_string()),
+        "liveness": row.get::<Option<sqlx::types::BigDecimal>, _>("liveness")
+            .map(|v| v.normalized().to_string()),
+        "uptime_7d": row.get::<Option<sqlx::types::BigDecimal>, _>("uptime_7d")
+            .map(|v| v.normalized().to_string()),
         "median_latency_ms": row.get::<Option<i32>, _>("median_latency"),
         "probes_7d": row.get::<Option<i32>, _>("probes_7d"),
         "trust": serde_json::Value::Null,
@@ -394,7 +396,7 @@ pub async fn agent_reviews(
             let value: sqlx::types::BigDecimal = r.get("value");
             json!({
                 "reviewer": format!("0x{}", hex_lower(&reviewer)),
-                "value": value.to_string(),
+                "value": amount_str(&value),
                 "value_decimals": r.get::<i32, _>("value_decimals"),
                 "tags": r.get::<Vec<String>, _>("tags"),
                 "uri": r.get::<Option<String>, _>("uri"),
@@ -493,4 +495,123 @@ pub async fn agent_endpoints(
         .collect();
 
     Ok(Json(json!({ "agent_id": clean, "items": items })))
+}
+
+/// Token amounts must reach the client as plain digit strings. BigDecimal's
+/// Display can emit scientific notation ("500e+16"), which is useless as a
+/// balance and dangerous to parse. with_scale(0) forces the integer form.
+fn amount_str(v: &sqlx::types::BigDecimal) -> String {
+    v.with_scale(0).to_string()
+}
+
+fn job_row_to_json(r: &sqlx::postgres::PgRow) -> serde_json::Value {
+    let hirer: Vec<u8> = r.get("hirer");
+    let provider: Option<Vec<u8>> = r.get("provider");
+    let create_tx: Option<Vec<u8>> = r.get("create_tx");
+    let settle_tx: Option<Vec<u8>> = r.get("settle_tx");
+    let budget: sqlx::types::BigDecimal = r.get("budget");
+    let refunded: Option<sqlx::types::BigDecimal> = r.get("refunded");
+    json!({
+        "job_id": r.get::<String, _>("job_id"),
+        "agent_id": r.get::<String, _>("agent_id"),
+        "agent_name": r.get::<Option<String>, _>("agent_name"),
+        "hirer": format!("0x{}", hex_lower(&hirer)),
+        "provider": provider.map(|p| format!("0x{}", hex_lower(&p))),
+        // Amounts stay strings all the way to the client so no JavaScript
+        // number ever touches a token balance.
+        "budget": amount_str(&budget),
+        "refunded": refunded.as_ref().map(amount_str),
+        "state": r.get::<String, _>("state"),
+        "kernel_status": r.get::<Option<i32>, _>("kernel_status"),
+        "chain_id": r.get::<i64, _>("chain_id"),
+        "spec": r.get::<Option<String>, _>("spec"),
+        "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+        "deadline": r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("deadline")
+            .map(|t| t.to_rfc3339()),
+        "submitted_at": r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("submitted_at")
+            .map(|t| t.to_rfc3339()),
+        "settled_at": r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("settled_at")
+            .map(|t| t.to_rfc3339()),
+        "create_tx": create_tx.map(|t| format!("0x{}", hex_lower(&t))),
+        "settle_tx": settle_tx.map(|t| format!("0x{}", hex_lower(&t))),
+    })
+}
+
+const JOB_SELECT: &str = "select j.job_id::text as job_id, j.agent_id::text as agent_id,
+        a.name as agent_name, j.hirer, j.provider, j.budget, j.refunded, j.state,
+        j.kernel_status, j.chain_id, j.spec, j.created_at, j.deadline,
+        j.submitted_at, j.settled_at, j.create_tx, j.settle_tx
+   from jobs j left join agents a on a.agent_id = j.agent_id";
+
+#[derive(Deserialize)]
+pub struct JobListParams {
+    pub hirer: Option<String>,
+    pub agent_id: Option<String>,
+    pub limit: Option<i64>,
+}
+
+/// Jobs opened through our hire rail, newest first. Filterable by hirer so
+/// the "my hires" page can show only yours.
+pub async fn list_jobs(
+    State(state): State<AppState>,
+    Query(params): Query<JobListParams>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let limit = params.limit.unwrap_or(50).clamp(1, 200);
+    let hirer_bytes = params
+        .hirer
+        .as_deref()
+        .map(|h| h.trim_start_matches("0x"))
+        .and_then(hex_decode);
+    let agent = params
+        .agent_id
+        .as_deref()
+        .map(|a| a.chars().filter(|c| c.is_ascii_digit()).collect::<String>())
+        .filter(|a| !a.is_empty());
+
+    let sql = format!(
+        "{JOB_SELECT}
+         where ($1::bytea is null or j.hirer = $1)
+           and ($2::text is null or j.agent_id = $2::numeric)
+         order by j.created_at desc
+         limit {limit}"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(hirer_bytes)
+        .bind(agent)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(%e, "list_jobs failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let items: Vec<serde_json::Value> = rows.iter().map(job_row_to_json).collect();
+    Ok(Json(json!({ "items": items })))
+}
+
+pub async fn get_job(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let clean: String = id.chars().filter(|c| c.is_ascii_digit()).collect();
+    if clean.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let sql = format!("{JOB_SELECT} where j.job_id = $1::numeric");
+    let row = sqlx::query(&sql)
+        .bind(&clean)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(job_row_to_json(&row)))
+}
+
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) || !s.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
 }

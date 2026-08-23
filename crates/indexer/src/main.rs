@@ -3,6 +3,7 @@
 
 mod events;
 mod ingest;
+mod jobs;
 
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder};
@@ -57,6 +58,59 @@ async fn main() -> anyhow::Result<()> {
         .as_deref()
         .map(make_provider)
         .transpose()?;
+
+    // The hire rail follower runs beside the registry followers. It is
+    // optional: with no HIRE_RAIL configured there is nothing to follow yet.
+    if let Some(rail_addr) = config.hire_rail.clone() {
+        let rail: Address = rail_addr.parse().context("HIRE_RAIL")?;
+        let kernel: Address = config
+            .hire_rail_kernel
+            .clone()
+            .unwrap_or_else(|| config.agentic_commerce.clone())
+            .parse()
+            .context("HIRE_RAIL_KERNEL")?;
+        let rail_rpc = config
+            .hire_rail_rpc
+            .clone()
+            .unwrap_or_else(|| config.bsc_rpc_http.clone());
+        let rail_provider = make_provider(&rail_rpc)?;
+        let mut follower = jobs::JobFollower {
+            provider: rail_provider,
+            pool: pool.clone(),
+            rail,
+            kernel,
+            chain_id: config.hire_rail_chain_id,
+        };
+        let deploy_block = config.hire_rail_deploy_block;
+        tokio::spawn(async move {
+            let mut next = match follower.start_block(deploy_block).await {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::error!(%e, "rail follower could not resume");
+                    return;
+                }
+            };
+            tracing::info!(%rail, chain_id = follower.chain_id, from = next, "hire rail follower starting");
+            loop {
+                match follower.provider.get_block_number().await {
+                    Ok(head) => {
+                        if next <= head {
+                            let to = (next + 1_999).min(head);
+                            match follower.ingest(next, to).await {
+                                Ok(n) => next = n,
+                                Err(e) => tracing::warn!(%e, "rail ingest failed"),
+                            }
+                        }
+                    }
+                    Err(e) => tracing::warn!(%e, "rail head fetch failed"),
+                }
+                if let Err(e) = follower.reconcile().await {
+                    tracing::warn!(%e, "job reconcile failed");
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        });
+    }
 
     let mut ingestor = Ingestor::new(primary.clone(), pool.clone());
     let mut consecutive_failures: u32 = 0;

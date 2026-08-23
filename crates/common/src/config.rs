@@ -22,6 +22,12 @@ pub struct Config {
     pub probe_interval_secs: u64,
     pub bscscan_api_key: Option<String>,
     pub api_port: u16,
+    /// The hire rail. During development it may live on a different chain
+    /// from the registries, so it carries its own rpc, chain id, and kernel.
+    pub hire_rail_rpc: Option<String>,
+    pub hire_rail_chain_id: u64,
+    pub hire_rail_kernel: Option<String>,
+    pub hire_rail_deploy_block: u64,
 }
 
 fn required(name: &str) -> anyhow::Result<String> {
@@ -58,6 +64,18 @@ impl Config {
                 .context("PROBE_INTERVAL_SECS")?,
             bscscan_api_key: optional("BSCSCAN_API_KEY"),
             api_port: required("API_PORT")?.parse().context("API_PORT")?,
+            hire_rail_rpc: optional("HIRE_RAIL_RPC"),
+            hire_rail_chain_id: optional("HIRE_RAIL_CHAIN_ID")
+                .map(|v| v.parse())
+                .transpose()
+                .context("HIRE_RAIL_CHAIN_ID")?
+                .unwrap_or(56),
+            hire_rail_kernel: optional("HIRE_RAIL_KERNEL"),
+            hire_rail_deploy_block: optional("HIRE_RAIL_DEPLOY_BLOCK")
+                .map(|v| v.parse())
+                .transpose()
+                .context("HIRE_RAIL_DEPLOY_BLOCK")?
+                .unwrap_or(0),
         })
     }
 }
