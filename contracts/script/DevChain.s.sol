@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Script, console} from "forge-std/Script.sol";
 import {HireRail} from "../src/HireRail.sol";
-import {MockUSD, MockKernel, MockRouter} from "../test/HireRail.t.sol";
+import {MockKernel, MockPolicy, MockRouter, MockUSD} from "../test/mocks/Mocks.sol";
 
 /// Stands up a complete local hire stack on a plain anvil node for UI
 /// development and the end to end suite: a U like token, a kernel and router
@@ -21,9 +21,13 @@ contract DevChain is Script {
         vm.startBroadcast(key);
         MockUSD usd = new MockUSD();
         MockKernel kernel = new MockKernel(usd);
-        address policy = address(uint160(uint256(keccak256("dev.optimistic.policy"))));
+        // Short dispute window so the whole lifecycle can be walked in a
+        // demo. Mainnet's live OptimisticPolicy uses seven days and the UI
+        // states the window of whichever chain it is talking to.
+        uint64 devDisputeWindow = uint64(vm.envOr("DEV_DISPUTE_WINDOW", uint256(60)));
+        MockPolicy policy = new MockPolicy(devDisputeWindow);
         MockRouter router = new MockRouter(kernel, policy);
-        HireRail rail = new HireRail(address(kernel), address(router), policy);
+        HireRail rail = new HireRail(address(kernel), address(router), address(policy));
 
         // Fund the standard anvil accounts so any of them can hire.
         usd.mint(deployer, 10_000e18);
@@ -34,7 +38,8 @@ contract DevChain is Script {
         console.log("DEV_TOKEN=%s", address(usd));
         console.log("DEV_KERNEL=%s", address(kernel));
         console.log("DEV_ROUTER=%s", address(router));
-        console.log("DEV_POLICY=%s", policy);
+        console.log("DEV_POLICY=%s", address(policy));
+        console.log("DEV_DISPUTE_WINDOW=%s", devDisputeWindow);
         console.log("DEV_HIRE_RAIL=%s", address(rail));
     }
 }

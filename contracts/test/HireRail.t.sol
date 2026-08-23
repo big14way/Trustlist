@@ -4,158 +4,28 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {HireRail} from "../src/HireRail.sol";
 import {IAgenticCommerce} from "../src/interfaces/IAgenticCommerce.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
-contract MockUSD is ERC20 {
-    constructor() ERC20("United Stables", "U") {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
-
-/// Mock of the ERC-8183 kernel matching the verified ABI's behaviour for the
-/// paths HireRail touches. The fork test in HireRailFork.t.sol exercises the
-/// same paths against the real deployed bytecode; this mock exists so the
-/// unit suite runs with no network.
-contract MockKernel {
-    MockUSD public immutable usd;
-    uint256 public jobCounter;
-
-    struct J {
-        address client;
-        address provider;
-        address evaluator;
-        address hook;
-        uint256 budget;
-        uint256 expiredAt;
-        IAgenticCommerce.JobStatus status;
-    }
-
-    mapping(uint256 => J) public jobsById;
-
-    constructor(MockUSD usd_) {
-        usd = usd_;
-    }
-
-    function paymentToken() external view returns (address) {
-        return address(usd);
-    }
-
-    function createJob(address provider, address evaluator, uint256 expiredAt, string calldata, address hook)
-        external
-        returns (uint256 jobId)
-    {
-        jobId = ++jobCounter;
-        jobsById[jobId] = J({
-            client: msg.sender,
-            provider: provider,
-            evaluator: evaluator,
-            hook: hook,
-            budget: 0,
-            expiredAt: expiredAt,
-            status: IAgenticCommerce.JobStatus.Open
-        });
-    }
-
-    function setBudget(uint256 jobId, uint256 amount, bytes calldata) external {
-        require(jobsById[jobId].client == msg.sender, "not client");
-        jobsById[jobId].budget = amount;
-    }
-
-    function fund(uint256 jobId, uint256 expectedBudget, bytes calldata) external {
-        J storage j = jobsById[jobId];
-        require(j.budget == expectedBudget, "budget mismatch");
-        require(j.status == IAgenticCommerce.JobStatus.Open, "not open");
-        usd.transferFrom(msg.sender, address(this), expectedBudget);
-        j.status = IAgenticCommerce.JobStatus.Funded;
-    }
-
-    function claimRefund(uint256 jobId) external {
-        J storage j = jobsById[jobId];
-        require(j.client == msg.sender, "not client");
-        require(j.status == IAgenticCommerce.JobStatus.Expired, "not expired");
-        j.status = IAgenticCommerce.JobStatus.Expired;
-        uint256 amount = j.budget;
-        j.budget = 0;
-        usd.transfer(j.client, amount);
-    }
-
-    function expire(uint256 jobId) external {
-        J storage j = jobsById[jobId];
-        require(block.timestamp > j.expiredAt, "not expired");
-        j.status = IAgenticCommerce.JobStatus.Expired;
-    }
-
-    function getJob(uint256 jobId) external view returns (IAgenticCommerce.Job memory job) {
-        J storage j = jobsById[jobId];
-        job.id = jobId;
-        job.client = j.client;
-        job.provider = j.provider;
-        job.evaluator = j.evaluator;
-        job.hook = j.hook;
-        job.budget = j.budget;
-        job.expiredAt = j.expiredAt;
-        job.status = j.status;
-    }
-}
-
-/// Mock router enforcing the same rules the real one does: the router must be
-/// the job's evaluator and hook, only the client may register, and the policy
-/// must be whitelisted.
-contract MockRouter {
-    MockKernel public immutable kernel;
-    mapping(uint256 => address) public jobPolicy;
-    mapping(address => bool) public policyWhitelist;
-    bool public settleShouldRevert;
-
-    error RouterNotEvaluator();
-    error RouterNotHook();
-    error NotJobClient();
-    error PolicyNotWhitelisted();
-
-    constructor(MockKernel kernel_, address policy_) {
-        kernel = kernel_;
-        policyWhitelist[policy_] = true;
-    }
-
-    function registerJob(uint256 jobId, address policy) external {
-        IAgenticCommerce.Job memory j = kernel.getJob(jobId);
-        if (j.evaluator != address(this)) revert RouterNotEvaluator();
-        if (j.hook != address(this)) revert RouterNotHook();
-        if (j.client != msg.sender) revert NotJobClient();
-        if (!policyWhitelist[policy]) revert PolicyNotWhitelisted();
-        jobPolicy[jobId] = policy;
-    }
-
-    function settle(uint256, bytes calldata) external view {
-        require(!settleShouldRevert, "not decided");
-    }
-
-    function markExpired(uint256 jobId) external {
-        kernel.expire(jobId);
-    }
-
-    function setSettleShouldRevert(bool v) external {
-        settleShouldRevert = v;
-    }
-}
+import {MockKernel, MockPolicy, MockRouter, MockUSD} from "./mocks/Mocks.sol";
 
 contract HireRailTest is Test {
     MockUSD usd;
     MockKernel kernel;
+    MockPolicy policyContract;
     MockRouter router;
     HireRail rail;
+
+    uint64 constant DISPUTE_WINDOW = 1 hours;
 
     address hirer = makeAddr("hirer");
     address provider = makeAddr("provider");
     address stranger = makeAddr("stranger");
-    address policy = makeAddr("policy");
+    address policy;
 
     function setUp() public {
         usd = new MockUSD();
         kernel = new MockKernel(usd);
-        router = new MockRouter(kernel, policy);
+        policyContract = new MockPolicy(DISPUTE_WINDOW);
+        policy = address(policyContract);
+        router = new MockRouter(kernel, policyContract);
         rail = new HireRail(address(kernel), address(router), policy);
         usd.mint(hirer, 1_000e18);
     }
@@ -219,22 +89,46 @@ contract HireRailTest is Test {
         vm.stopPrank();
     }
 
-    function test_settle_forwards_to_router() public {
+    function test_settle_completes_the_job_and_pays_the_provider() public {
         uint256 jobId = hireOnce(5e18);
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("deliverable"), "");
+        assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Submitted));
+
+        // Silence past the dispute window is approval.
+        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+        // Permissionless: a stranger can push the payout through.
         vm.prank(stranger);
+        rail.settle(jobId, "");
+
+        assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Completed));
+        assertEq(usd.balanceOf(provider), 5e18, "provider paid from escrow");
+        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing");
+    }
+
+    function test_disputed_job_settles_back_to_the_hirer() public {
+        uint256 jobId = hireOnce(5e18);
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("junk"), "");
+        policyContract.dispute(jobId);
+        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+        rail.settle(jobId, "");
+        assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Rejected));
+        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole on rejection");
+        assertEq(usd.balanceOf(provider), 0, "provider paid nothing");
+    }
+
+    function test_settle_reverts_before_the_dispute_window_closes() public {
+        uint256 jobId = hireOnce(5e18);
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("d"), "");
+        vm.expectRevert();
         rail.settle(jobId, "");
     }
 
     function test_settle_reverts_for_unknown_job() public {
         vm.expectRevert(HireRail.UnknownJob.selector);
         rail.settle(999, "");
-    }
-
-    function test_settle_bubbles_router_revert() public {
-        uint256 jobId = hireOnce(5e18);
-        router.setSettleShouldRevert(true);
-        vm.expectRevert();
-        rail.settle(jobId, "");
     }
 
     function test_reclaim_refunds_the_hirer_after_expiry() public {
@@ -296,5 +190,86 @@ contract HireRailTest is Test {
         vm.warp(block.timestamp + 2 days);
         rail.reclaim(jobId);
         assertEq(usd.balanceOf(hirer), 1_000e18);
+    }
+
+    function test_forwardRefund_rescues_a_rejection_settled_outside_the_rail() public {
+        uint256 jobId = hireOnce(5e18);
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("junk"), "");
+        policyContract.dispute(jobId);
+        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+
+        // Someone settles straight on the router, bypassing our rail. The
+        // kernel refunds its client, which is the rail, so the money lands
+        // here instead of with the person who paid.
+        router.settle(jobId, "");
+        assertEq(usd.balanceOf(address(rail)), 5e18, "escrow stranded on the rail");
+        assertEq(usd.balanceOf(hirer), 995e18, "hirer not yet made whole");
+
+        // Anyone may push it to the hirer, and only to the hirer.
+        vm.prank(stranger);
+        rail.forwardRefund(jobId);
+        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole");
+        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing at rest");
+        assertEq(usd.balanceOf(stranger), 0, "caller gains nothing");
+    }
+
+    function test_forwardRefund_cannot_run_twice() public {
+        uint256 jobId = hireOnce(5e18);
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("junk"), "");
+        policyContract.dispute(jobId);
+        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+        router.settle(jobId, "");
+        rail.forwardRefund(jobId);
+        vm.expectRevert(HireRail.NothingToRefund.selector);
+        rail.forwardRefund(jobId);
+    }
+
+    function test_forwardRefund_rejects_unknown_and_unfinished_jobs() public {
+        vm.expectRevert(HireRail.UnknownJob.selector);
+        rail.forwardRefund(999);
+
+        uint256 jobId = hireOnce(5e18);
+        // Still funded, so there is nothing to refund and no right to take.
+        vm.expectRevert(HireRail.JobNotRefundable.selector);
+        rail.forwardRefund(jobId);
+    }
+
+    function test_settle_after_rejection_returns_escrow_to_the_hirer() public {
+        uint256 jobId = hireOnce(5e18);
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("junk"), "");
+        policyContract.dispute(jobId);
+        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+        // Through our rail this happens in one transaction, no rescue needed.
+        rail.settle(jobId, "");
+        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole in one step");
+        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing");
+        assertTrue(rail.refundForwarded(jobId), "marked as forwarded");
+    }
+
+    /// The rail is a conduit, never a vault: whatever sequence runs, it must
+    /// not be holding tokens once the transaction ends.
+    function testFuzz_rail_never_holds_funds_at_rest(uint96 budget, bool disputeIt) public {
+        budget = uint96(bound(budget, 1, 1_000e18));
+        vm.startPrank(hirer);
+        usd.approve(address(rail), budget);
+        uint256 jobId =
+            rail.hire(1, provider, budget, uint64(block.timestamp + 1 days), keccak256("f"), "fuzz");
+        vm.stopPrank();
+
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("d"), "");
+        if (disputeIt) policyContract.dispute(jobId);
+        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+        rail.settle(jobId, "");
+
+        assertEq(usd.balanceOf(address(rail)), 0, "rail empty");
+        if (disputeIt) {
+            assertEq(usd.balanceOf(hirer), 1_000e18, "refunded in full");
+        } else {
+            assertEq(usd.balanceOf(provider), budget, "provider paid in full");
+        }
     }
 }

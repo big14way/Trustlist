@@ -39,6 +39,12 @@ contract HireRail is Ownable2Step, Pausable, ReentrancyGuard {
     mapping(uint256 => address) public hirerOf;
     /// @notice The ERC-8004 agent id behind each job this rail opened.
     mapping(uint256 => uint256) public agentOf;
+    /// @notice The escrowed budget of each job, so a refund can be bounded
+    /// to the job it belongs to.
+    mapping(uint256 => uint256) public budgetOf;
+    /// @notice Whether a job's refund has already been forwarded to its
+    /// hirer, so it can never be forwarded twice.
+    mapping(uint256 => bool) public refundForwarded;
 
     event Hired(
         uint256 indexed jobId,
@@ -51,12 +57,14 @@ contract HireRail is Ownable2Step, Pausable, ReentrancyGuard {
     );
     event Settled(uint256 indexed jobId, address indexed caller);
     event Reclaimed(uint256 indexed jobId, address indexed hirer, uint256 refunded);
+    event Refunded(uint256 indexed jobId, address indexed hirer, uint256 amount);
 
     error DeadlineInPast();
     error ZeroBudget();
     error ZeroProvider();
     error UnknownJob();
     error NothingToRefund();
+    error JobNotRefundable();
 
     constructor(address kernel_, address router_, address policy_) Ownable(msg.sender) {
         kernel = IAgenticCommerce(kernel_);
@@ -97,6 +105,7 @@ contract HireRail is Ownable2Step, Pausable, ReentrancyGuard {
 
         hirerOf[jobId] = msg.sender;
         agentOf[jobId] = agentId;
+        budgetOf[jobId] = budget;
 
         token.safeTransferFrom(msg.sender, address(this), budget);
         token.forceApprove(address(kernel), budget);
@@ -107,10 +116,51 @@ contract HireRail is Ownable2Step, Pausable, ReentrancyGuard {
 
     /// @notice Forward a settlement to the EvaluatorRouter. Permissionless,
     /// exactly as the router is: anyone may push a decided job to payout.
+    /// @dev A rejected job refunds the kernel's client, and this contract is
+    /// that client. Any tokens that land here as a result are forwarded to
+    /// the person who actually paid, in the same transaction.
     function settle(uint256 jobId, bytes calldata evidence) external nonReentrant {
-        if (hirerOf[jobId] == address(0)) revert UnknownJob();
+        address hirer = hirerOf[jobId];
+        if (hirer == address(0)) revert UnknownJob();
+
+        uint256 before = token.balanceOf(address(this));
         router.settle(jobId, evidence);
+        uint256 returned = token.balanceOf(address(this)) - before;
+
         emit Settled(jobId, msg.sender);
+        if (returned > 0) {
+            refundForwarded[jobId] = true;
+            token.safeTransfer(hirer, returned);
+            emit Refunded(jobId, hirer, returned);
+        }
+    }
+
+    /// @notice Push a stranded refund to the hirer it belongs to. Needed
+    /// when a job was settled or expired without going through this
+    /// contract, which leaves the escrow sitting here as the kernel's
+    /// client. Permissionless, bounded to that job's own budget, and
+    /// payable only to the recorded hirer.
+    function forwardRefund(uint256 jobId) external nonReentrant {
+        address hirer = hirerOf[jobId];
+        if (hirer == address(0)) revert UnknownJob();
+        if (refundForwarded[jobId]) revert NothingToRefund();
+
+        IAgenticCommerce.JobStatus status = kernel.getJob(jobId).status;
+        if (
+            status != IAgenticCommerce.JobStatus.Rejected
+                && status != IAgenticCommerce.JobStatus.Expired
+        ) {
+            revert JobNotRefundable();
+        }
+
+        uint256 balance = token.balanceOf(address(this));
+        uint256 owed = budgetOf[jobId];
+        uint256 amount = balance < owed ? balance : owed;
+        if (amount == 0) revert NothingToRefund();
+
+        refundForwarded[jobId] = true;
+        token.safeTransfer(hirer, amount);
+        emit Refunded(jobId, hirer, amount);
     }
 
     /// @notice Expire a past deadline job and return the escrow to the
@@ -129,6 +179,7 @@ contract HireRail is Ownable2Step, Pausable, ReentrancyGuard {
         uint256 refunded = token.balanceOf(address(this)) - before;
         if (refunded == 0) revert NothingToRefund();
 
+        refundForwarded[jobId] = true;
         token.safeTransfer(hirer, refunded);
         emit Reclaimed(jobId, hirer, refunded);
     }
