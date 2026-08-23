@@ -160,6 +160,12 @@ export default async function Home() {
           <a className="underline" href="/jobs">
             My hires
           </a>
+          <a className="underline" href="/stats">
+            Registry health
+          </a>
+          <a className="underline" href="/methodology">
+            How the numbers are made
+          </a>
           <a
             className="underline"
             href="https://github.com/big14way/Trustlist"

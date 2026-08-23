@@ -106,4 +106,46 @@ if [ -f "$SEED/agent_scores.tsv.gz" ]; then
   drop table seed_scores;"
 fi
 
+if [ -f "$SEED/reviewer_weights.tsv.gz" ]; then
+  run_psql -c "create table if not exists seed_weights (
+    reviewer_hex text, weight numeric, cluster_id bigint, flags text[]);
+    truncate seed_weights;"
+  gunzip -c "$SEED/reviewer_weights.tsv.gz" | run_psql -c "\\copy seed_weights from pstdin"
+  run_psql -c "
+  insert into reviewer_weights (reviewer, weight, cluster_id, flags, computed_at)
+  select decode(reviewer_hex,'hex'), weight, cluster_id, coalesce(flags,'{}'), now()
+  from seed_weights on conflict (reviewer) do nothing;
+  drop table seed_weights;"
+fi
+
+if [ -f "$SEED/reviewer_funding.tsv.gz" ]; then
+  run_psql -c "create table if not exists seed_funding (
+    reviewer_hex text, funder_hex text, first_block bigint, outbound_count int);
+    truncate seed_funding;"
+  gunzip -c "$SEED/reviewer_funding.tsv.gz" | run_psql -c "\\copy seed_funding from pstdin"
+  run_psql -c "
+  insert into reviewer_funding (reviewer, funder, first_block, outbound_count, traced_at)
+  select decode(reviewer_hex,'hex'),
+         case when funder_hex is null or funder_hex = '' then null else decode(funder_hex,'hex') end,
+         first_block, outbound_count, now()
+  from seed_funding on conflict (reviewer) do nothing;
+  drop table seed_funding;"
+fi
+
+if [ -f "$SEED/agent_trust.tsv.gz" ]; then
+  run_psql -c "create table if not exists seed_agent_trust (
+    agent_id numeric, trust numeric, confidence numeric, raw_average numeric,
+    feedback_total bigint, feedback_kept bigint);
+    truncate seed_agent_trust;"
+  gunzip -c "$SEED/agent_trust.tsv.gz" | run_psql -c "\\copy seed_agent_trust from pstdin"
+  run_psql -c "
+  insert into agent_trust (agent_id, trust, confidence, raw_average,
+                           feedback_total, feedback_kept, computed_at)
+  select agent_id, trust, confidence, raw_average, feedback_total, feedback_kept, now()
+  from seed_agent_trust t
+  where exists (select 1 from agents a where a.agent_id = t.agent_id)
+  on conflict (agent_id) do nothing;
+  drop table seed_agent_trust;"
+fi
+
 echo "seed loaded"

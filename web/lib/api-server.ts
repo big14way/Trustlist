@@ -5,6 +5,7 @@ import {
   type AgentList,
   type EndpointState,
   type Reviews,
+  type Methodology,
   type Stats,
   type UptimeBuckets,
   type UptimeMap,
@@ -53,4 +54,8 @@ export function fetchAgentEndpoints(
   return get<{ agent_id: string; items: EndpointState[] }>(
     `/v1/agents/${encodeURIComponent(id)}/endpoints`,
   );
+}
+
+export function fetchMethodology(): Promise<Methodology | null> {
+  return get<Methodology>("/v1/methodology");
 }

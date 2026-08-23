@@ -2,6 +2,7 @@
 //! TrustList service.
 
 pub mod config;
+pub mod methodology;
 
 use anyhow::Context;
 use sqlx::postgres::PgPoolOptions;

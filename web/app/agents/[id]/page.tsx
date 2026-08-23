@@ -7,7 +7,7 @@ import {
   fetchAgentReviews,
   fetchAgentUptime,
 } from "@/lib/api-server";
-import type { AgentCard, EndpointState, Reviews } from "@/lib/api";
+import type { AgentCard, EndpointState, Review, Reviews } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -75,11 +75,55 @@ function EndpointRow({ e }: { e: EndpointState }) {
   );
 }
 
+const FLAG_COPY: Record<string, string> = {
+  funding_cluster: "one wallet paid for five or more reviewers",
+  shared_funder: "shares a funder with another reviewer",
+  coreview_ring: "reviews the same agents as several others, again and again",
+  one_shot: "one review, and almost nothing else on chain",
+  no_other_activity: "barely transacts outside the registry",
+  single_value_only: "has never given a different score",
+  fresh_address: "funded days before it started reviewing",
+  reciprocal: "rates an agent whose owner rates one of theirs",
+  high_revocation: "writes feedback and takes it back",
+};
+
+function ReviewerRow({ r }: { r: Review }) {
+  const weight = r.weight ? parseFloat(r.weight) : null;
+  const scaled = (
+    parseFloat(r.value) / Math.pow(10, r.value_decimals)
+  ).toFixed(0);
+  return (
+    <li className="border-t border-dormant/30 py-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="font-data text-xs">
+          {r.reviewer.slice(0, 10)}…{r.reviewer.slice(-4)}
+        </span>
+        <span className="font-data text-xs">
+          gave {scaled} · counted{" "}
+          <span className={weight !== null && weight < 0.5 ? "text-flag" : ""}>
+            {weight !== null ? weight.toFixed(2) : "1.00"}
+          </span>
+        </span>
+      </div>
+      {r.flags.length > 0 ? (
+        <p className="mt-1 text-xs text-ink/70">
+          {r.flags.map((f) => FLAG_COPY[f] ?? f).join(" · ")}
+        </p>
+      ) : (
+        <p className="mt-1 text-xs text-ink/60">
+          no independence problems found
+        </p>
+      )}
+      {r.funder ? (
+        <p className="font-data mt-0.5 text-[11px] text-dormant">
+          funded by {r.funder.slice(0, 10)}…{r.funder.slice(-4)}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
 function ReviewsPanel({ reviews }: { reviews: Reviews }) {
-  const perReviewer =
-    reviews.distinct_reviewers > 0
-      ? (reviews.total / reviews.distinct_reviewers).toFixed(1)
-      : "0";
   if (reviews.total === 0) {
     return (
       <div className="rounded-lg border border-dormant/40 p-4">
@@ -90,30 +134,75 @@ function ReviewsPanel({ reviews }: { reviews: Reviews }) {
       </div>
     );
   }
+
+  const kept = reviews.kept ?? 0;
+  // Show the reviewers who carry the most weight first: if any independent
+  // voice exists, the reader should see it before the farm.
+  const ranked = [...reviews.items]
+    .sort((a, b) => parseFloat(b.weight ?? "1") - parseFloat(a.weight ?? "1"))
+    .slice(0, 12);
+
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div className="rounded-lg border border-dormant/40 p-4">
-        <p className="eyebrow text-dormant">WHAT THE REGISTRY SAYS</p>
-        <p className="font-data mt-2 text-3xl">{reviews.total}</p>
-        <p className="mt-1 text-sm text-ink/80">
-          reviews recorded on chain
-          {reviews.revoked > 0 ? `, ${reviews.revoked} later revoked` : ""}.
-        </p>
-        <p className="font-data mt-3 text-xs text-ink/70">
-          FROM {reviews.distinct_reviewers} ADDRESSES · {perReviewer} EACH
-        </p>
+    <div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-lg border border-dormant/40 p-4">
+          <p className="eyebrow text-dormant">WHAT THE REGISTRY SAYS</p>
+          <p className="font-data mt-2 text-3xl">
+            {reviews.raw_average ?? "n/a"}
+          </p>
+          <p className="mt-1 text-sm text-ink/80">
+            the plain average of {reviews.total} reviews, exactly as anyone
+            reading the chain would compute it
+          </p>
+          <p className="font-data mt-3 text-xs text-ink/70">
+            {reviews.total} REVIEWS FROM {reviews.distinct_reviewers} ADDRESSES
+          </p>
+        </div>
+
+        <div
+          className={`rounded-lg border p-4 ${
+            kept === 0 ? "border-flag/60" : "border-dormant/40"
+          }`}
+        >
+          <p className={`eyebrow ${kept === 0 ? "text-flag" : "text-dormant"}`}>
+            WHAT WE COUNT
+          </p>
+          <p className="font-data mt-2 text-3xl">
+            {reviews.trust ?? <span className="text-dormant">none</span>}
+          </p>
+          <p className="mt-1 text-sm text-ink/80">
+            {kept === 0
+              ? `${reviews.total} reviews, none of them from an independent address. We will not turn that into a score.`
+              : `weighted by how independent each reviewer actually is, from ${kept} independent ${kept === 1 ? "voice" : "voices"}.`}
+          </p>
+          <p className="font-data mt-3 text-xs text-ink/70">
+            KEPT {kept}/{reviews.total} · CONFIDENCE {reviews.confidence ?? "0"}
+          </p>
+        </div>
       </div>
-      <div className="rounded-lg border border-flag/50 p-4">
-        <p className="eyebrow text-flag">WHAT WE COUNT</p>
-        <p className="font-data mt-2 text-3xl text-dormant">not yet</p>
-        <p className="mt-1 text-sm text-ink/80">
-          Reviewer independence weighting is not built yet, so we do not claim
-          a filtered score. We will not show a number we have not computed.
-        </p>
+
+      <details className="mt-4 rounded-lg border border-dormant/40 p-4">
+        <summary className="cursor-pointer text-sm">
+          Show every reviewer and why we weighted it that way
+        </summary>
+        <ul className="mt-2">
+          {ranked.map((r, i) => (
+            <ReviewerRow key={`${r.tx_hash}-${i}`} r={r} />
+          ))}
+        </ul>
+        {reviews.items.length > ranked.length ? (
+          <p className="font-data mt-2 text-xs text-dormant">
+            showing {ranked.length} of {reviews.items.length} fetched
+          </p>
+        ) : null}
         <p className="mt-3 text-xs text-ink/70">
-          Ranking today uses measured uptime only.
+          Weights come from public chain data by published rules. See{" "}
+          <a className="underline" href="/methodology">
+            the methodology
+          </a>
+          .
         </p>
-      </div>
+      </details>
     </div>
   );
 }
@@ -201,8 +290,12 @@ export default async function AgentDetail({
           />
           <StatBlock
             label="TRUST"
-            value="not scored"
-            detail="Sybil filtered reputation arrives with the trust engine. Nothing is guessed in the meantime."
+            value={agent.trust ?? "not scored"}
+            detail={
+              agent.trust
+                ? `from ${agent.feedback_kept ?? 0} independent voices out of ${agent.feedback_total} reviews, confidence ${agent.trust_confidence ?? "0"}`
+                : `${agent.feedback_total} reviews on chain, none of them independent enough to score. Ranked on measured uptime instead.`
+            }
           />
           <StatBlock
             label="JOBS"

@@ -108,8 +108,12 @@ if [ "$MILESTONE" -ge 1 ]; then
     code=$(curl -s -o /dev/null -w '%{http_code}' "${API:-http://localhost:8080}$r")
     [ "$code" = "200" ] || fail "$r returned $code"
   done
+  if [ "$MILESTONE" -ge 5 ]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' "${API:-http://localhost:8080}/v1/methodology")
+    [ "$code" = "200" ] || fail "/v1/methodology returned $code"
+  fi
   if [ "$MILESTONE" -ge 6 ]; then
-    for r in /v1/snapshots/latest /v1/methodology; do
+    for r in /v1/snapshots/latest; do
       code=$(curl -s -o /dev/null -w '%{http_code}' "${API:-http://localhost:8080}$r")
       [ "$code" = "200" ] || fail "$r returned $code"
     done
@@ -119,10 +123,15 @@ if [ "$MILESTONE" -ge 1 ]; then
     [ "$code" = "200" ] || fail "page $p returned $code"
   done
   if [ "$MILESTONE" -ge 5 ]; then
-    for p in /jobs /sessions /methodology /stats; do
+    for p in /jobs /methodology /stats; do
       code=$(curl -s -o /dev/null -w '%{http_code}' "${WEB:-http://localhost:3000}$p")
       [ "$code" = "200" ] || fail "page $p returned $code"
     done
+  fi
+  # Altana sessions arrive with the partner tracks in M7.
+  if [ "$MILESTONE" -ge 7 ]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' "${WEB:-http://localhost:3000}/sessions")
+    [ "$code" = "200" ] || fail "page /sessions returned $code"
   fi
   if [ "$MILESTONE" -ge 8 ]; then
     code=$(curl -s -o /dev/null -w '%{http_code}' "${WEB:-http://localhost:3000}/compare")
@@ -138,8 +147,12 @@ if [ "$MILESTONE" -ge 1 ]; then
       || fail "fewer than 200 agents with 24 or more probes"
   fi
   if [ "$MILESTONE" -ge 5 ]; then
-    [ "$(run_sql 'select count(*) from agent_scores where feedback_total > feedback_kept')" -ge 1 ] \
-      || fail "no agent shows feedback_total greater than feedback_kept, the filter never fired"
+    [ "$(run_sql 'select count(*) from agent_trust where feedback_total > feedback_kept')" -ge 1 ] \
+      || fail "no agent shows more reviews seen than counted, the filter never fired"
+    [ "$(run_sql 'select count(*) from reviewer_weights where weight < 1.0')" -ge 1 ] \
+      || fail "no reviewer was ever downweighted, the independence check never fired"
+    [ "$(run_sql 'select count(*) from reviewer_funding where funder is not null')" -ge 1 ] \
+      || fail "no reviewer funding was traced, the cluster evidence is missing"
   fi
 else
   say "10-11. runtime checks begin at M1 (current milestone: $MILESTONE)"

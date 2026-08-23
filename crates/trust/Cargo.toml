@@ -7,6 +7,8 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 common = { path = "../common" }
+# petgraph builds the reviewer graph so funding links become clusters.
+petgraph = "0.8"
 sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true

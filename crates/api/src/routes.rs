@@ -69,10 +69,12 @@ fn agent_row_to_json(row: &sqlx::postgres::PgRow) -> serde_json::Value {
             .map(|v| v.normalized().to_string()),
         "median_latency_ms": row.get::<Option<i32>, _>("median_latency"),
         "probes_7d": row.get::<Option<i32>, _>("probes_7d"),
-        "trust": serde_json::Value::Null,
-        "trust_confidence": serde_json::Value::Null,
+        "trust": row.get::<Option<sqlx::types::BigDecimal>, _>("trust")
+            .map(|v| v.with_scale(1).to_string()),
+        "trust_confidence": row.get::<Option<sqlx::types::BigDecimal>, _>("trust_confidence")
+            .map(|v| v.with_scale(2).to_string()),
         "feedback_total": row.get::<i64, _>("feedback_total"),
-        "feedback_kept": serde_json::Value::Null,
+        "feedback_kept": row.get::<Option<i32>, _>("feedback_kept"),
         "jobs_completed": 0,
         "jobs_disputed": 0,
     })
@@ -143,6 +145,7 @@ pub async fn list_agents(
                 a.card_status, a.endpoints, a.registered_at, a.registered_block,
                 {STATUS_SQL} as status,
                 sc.liveness, sc.uptime_7d, sc.median_latency, sc.probes_7d,
+                sc.trust, sc.trust_confidence, sc.feedback_kept,
                 split_part(a.token_uri, ':', 1) as token_uri_scheme,
                 coalesce(f.cnt, 0) as feedback_total
          from agents a
@@ -198,6 +201,7 @@ pub async fn get_agent(
                 a.card_status, a.endpoints, a.registered_at, a.registered_block,
                 {STATUS_SQL} as status,
                 sc.liveness, sc.uptime_7d, sc.median_latency, sc.probes_7d,
+                sc.trust, sc.trust_confidence, sc.feedback_kept,
                 split_part(a.token_uri, ':', 1) as token_uri_scheme,
                 coalesce(f.cnt, 0) as feedback_total
          from agents a
@@ -222,7 +226,9 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
     let row = sqlx::query(
         "select s.registered, s.cards_fetched, s.cards_ok, s.with_endpoints,
                 s.feedback, s.reviewers, s.live, s.flaky, s.down, s.measuring,
-                s.probes_total, s.computed_at,
+                s.probes_total, s.computed_at, s.agents_rated, s.agents_scored,
+                s.reviews_kept, s.reviewers_independent,
+                s.largest_cluster_reviewers, s.largest_cluster_reviews,
                 (select max(last_block) from indexer_state) as indexed_to_block,
                 (select max(updated_at) from indexer_state) as indexed_at
            from registry_stats s where s.id = 1",
@@ -253,6 +259,12 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
         "down": row.get::<i64, _>("down"),
         "measuring": row.get::<i64, _>("measuring"),
         "probes_total": row.get::<i64, _>("probes_total"),
+        "agents_rated": row.get::<i64, _>("agents_rated"),
+        "agents_scored": row.get::<i64, _>("agents_scored"),
+        "reviews_kept": row.get::<i64, _>("reviews_kept"),
+        "reviewers_independent": row.get::<i64, _>("reviewers_independent"),
+        "largest_cluster_reviewers": row.get::<i64, _>("largest_cluster_reviewers"),
+        "largest_cluster_reviews": row.get::<i64, _>("largest_cluster_reviews"),
         "computed_at": row.get::<chrono::DateTime<chrono::Utc>, _>("computed_at").to_rfc3339(),
         "indexed_to_block": row.get::<Option<i64>, _>("indexed_to_block"),
         "indexed_at": row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("indexed_at")
@@ -379,11 +391,15 @@ pub async fn agent_reviews(
         return Err(StatusCode::BAD_REQUEST);
     }
     let rows = sqlx::query(
-        "select reviewer, value, value_decimals, tags, uri, revoked,
-                block_time, tx_hash
-         from feedback
-         where agent_id = $1::numeric
-         order by block_time desc
+        "select f.reviewer, f.value, f.value_decimals, f.tags, f.uri, f.revoked,
+                f.block_time, f.tx_hash,
+                w.weight, w.flags, w.cluster_id,
+                rf.funder
+         from feedback f
+         left join reviewer_weights w on w.reviewer = f.reviewer
+         left join reviewer_funding rf on rf.reviewer = f.reviewer
+         where f.agent_id = $1::numeric
+         order by f.block_time desc
          limit 200",
     )
     .bind(&clean)
@@ -409,9 +425,12 @@ pub async fn agent_reviews(
                 "revoked": r.get::<bool, _>("revoked"),
                 "block_time": r.get::<chrono::DateTime<chrono::Utc>, _>("block_time").to_rfc3339(),
                 "tx_hash": format!("0x{}", hex_lower(&tx)),
-                // Reviewer independence weighting ships in M5.
-                "weight": serde_json::Value::Null,
-                "flags": serde_json::Value::Array(vec![]),
+                "weight": r.get::<Option<sqlx::types::BigDecimal>, _>("weight")
+                    .map(|v| v.normalized().to_string()),
+                "flags": r.get::<Option<Vec<String>>, _>("flags").unwrap_or_default(),
+                "cluster_id": r.get::<Option<i64>, _>("cluster_id").map(|v| v.to_string()),
+                "funder": r.get::<Option<Vec<u8>>, _>("funder")
+                    .map(|f| format!("0x{}", hex_lower(&f))),
             })
         })
         .collect();
@@ -420,9 +439,13 @@ pub async fn agent_reviews(
     // 29,511 reviews were written by 105 addresses.
     let summary = sqlx::query(
         "select count(*) as total,
-                count(*) filter (where revoked) as revoked,
-                count(distinct reviewer) as reviewers
-         from feedback where agent_id = $1::numeric",
+                count(*) filter (where f.revoked) as revoked,
+                count(distinct f.reviewer) as reviewers,
+                (select t.feedback_kept from agent_trust t where t.agent_id = $1::numeric) as kept,
+                (select t.trust from agent_trust t where t.agent_id = $1::numeric) as trust,
+                (select t.raw_average from agent_trust t where t.agent_id = $1::numeric) as raw_average,
+                (select t.confidence from agent_trust t where t.agent_id = $1::numeric) as confidence
+         from feedback f where f.agent_id = $1::numeric",
     )
     .bind(&clean)
     .fetch_one(&state.pool)
@@ -434,7 +457,13 @@ pub async fn agent_reviews(
         "total": summary.get::<i64, _>("total"),
         "revoked": summary.get::<i64, _>("revoked"),
         "distinct_reviewers": summary.get::<i64, _>("reviewers"),
-        "kept": serde_json::Value::Null,
+        "kept": summary.get::<Option<i64>, _>("kept"),
+        "trust": summary.get::<Option<sqlx::types::BigDecimal>, _>("trust")
+            .map(|v| v.with_scale(1).to_string()),
+        "raw_average": summary.get::<Option<sqlx::types::BigDecimal>, _>("raw_average")
+            .map(|v| v.with_scale(1).to_string()),
+        "confidence": summary.get::<Option<sqlx::types::BigDecimal>, _>("confidence")
+            .map(|v| v.with_scale(2).to_string()),
         "items": items,
     })))
 }
@@ -621,4 +650,11 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
         .collect()
+}
+
+/// The parameter set the trust engine actually runs on. The public
+/// methodology page renders from this response, so the rules a reader is
+/// shown cannot drift from the rules that ran.
+pub async fn methodology() -> impl IntoResponse {
+    Json(common::methodology::current())
 }

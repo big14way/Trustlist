@@ -32,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/jobs", get(routes::list_jobs))
         .route("/v1/jobs/{id}", get(routes::get_job))
         .route("/v1/stats", get(routes::stats))
+        .route("/v1/methodology", get(routes::methodology))
         .route("/v1/uptime", get(routes::bulk_uptime))
         .with_state(AppState { pool })
         .layer(CorsLayer::permissive())

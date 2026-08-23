@@ -22,8 +22,8 @@ export type AgentCard = {
   uptime_7d: string | null;
   median_latency_ms: number | null;
   probes_7d: number | null;
-  trust: number | null;
-  trust_confidence: number | null;
+  trust: string | null;
+  trust_confidence: string | null;
   feedback_total: number;
   feedback_kept: number | null;
   jobs_completed: number;
@@ -52,6 +52,12 @@ export type Stats = {
   down: number;
   measuring: number;
   probes_total: number;
+  agents_rated: number;
+  agents_scored: number;
+  reviews_kept: number;
+  reviewers_independent: number;
+  largest_cluster_reviewers: number;
+  largest_cluster_reviews: number;
   indexed_to_block: number | null;
   indexed_at: string | null;
 };
@@ -108,8 +114,12 @@ export type Review = {
   revoked: boolean;
   block_time: string;
   tx_hash: string;
-  weight: number | null;
+  /// 0..1. How much this reviewer's opinion counts, and why.
+  weight: string | null;
   flags: string[];
+  cluster_id: string | null;
+  /// The wallet that paid for this reviewer's first transaction.
+  funder: string | null;
 };
 
 export type Reviews = {
@@ -117,7 +127,12 @@ export type Reviews = {
   total: number;
   revoked: number;
   distinct_reviewers: number;
+  /// Independent voices left after weighting, which can be zero even when
+  /// hundreds of reviews exist.
   kept: number | null;
+  trust: string | null;
+  raw_average: string | null;
+  confidence: string | null;
   items: Review[];
 };
 
@@ -171,3 +186,47 @@ export function fetchJobs(hirer?: string): Promise<{ items: Job[] } | null> {
   const qs = hirer ? `?hirer=${encodeURIComponent(hirer)}` : "";
   return apiGet<{ items: Job[] }>(`/v1/jobs${qs}`);
 }
+
+export type Penalty = {
+  id: string;
+  factor: number;
+  detects: string;
+  why: string;
+};
+
+export type Methodology = {
+  liveness: {
+    formula: string;
+    uptime_weight: number;
+    card_quality_weight: number;
+    latency_weight: number;
+    latency_ceiling_ms: number;
+    probe_interval_secs: number;
+    bulk_host_probe_interval_secs: number;
+    min_probes_for_a_status: number;
+    min_probes_daily_cadence: number;
+    live_threshold: number;
+    flaky_threshold: number;
+    alive_http_statuses: string;
+    dead_http_statuses: string;
+    observer_outage_rule: string;
+  };
+  reputation: {
+    scale: string;
+    prior_strength: number;
+    min_evidence_to_publish: number;
+    weight_floor: number;
+    funding_cluster_size: number;
+    coreview_shared_agents: number;
+    coreview_peers: number;
+    cluster_cap_rule: string;
+    penalties: Penalty[];
+  };
+  ranking: {
+    formula: string;
+    liveness_weight: number;
+    trust_weight: number;
+    default_filter: string;
+  };
+  known_weaknesses: string[];
+};
