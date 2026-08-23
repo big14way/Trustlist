@@ -97,3 +97,85 @@ Reading: under the paper's loose definition (any live declared endpoint) the sha
 
 ### Paper version pin
 arXiv:2606.26028 v1 and v2 differ on BSC figures (no valid feedback after filtering: 72.3 percent in v1, 77.9 percent in v2). We cite v2 (revised 8 July 2026) everywhere, explicitly.
+
+## 13. Settlement timing on the live ERC-8183 stack (23 August 2026)
+
+Four independent investigations plus two adversarial verification passes, all
+run against BSC mainnet or a fork of it. Two verifiers independently
+recompiled the deployed bytecode from `bnb-chain/apex-contracts` and matched
+it at all three addresses after masking immutables.
+
+### The seven day window is real, exact, and not ours to change
+
+- `OptimisticPolicy.disputeWindow()` = 604800 seconds, and it is an
+  `immutable` baked into the deployed bytecode (readable in the immutable
+  references). There is no setter, and the contract is not a proxy (4413
+  bytes, empty implementation slot), so it cannot be upgraded either.
+- `check()` has exactly one path that returns APPROVE, behind an
+  unconditional `block.timestamp >= submittedAt + 604800`. The `evidence`
+  argument is commented out and cannot influence the verdict; a verifier
+  fuzzed 256 random inputs and the verdict never moved.
+- `router.settle()` reverts `NotDecided()` at one second before the window
+  and succeeds one second after. Measured on a fork, both sides.
+- Registering a faster policy is blocked: `setPolicyWhitelist` is owner only.
+  The router owner, the kernel owner, and the policy admin are all the same
+  address, `0x5057b09A4b510ccaf7e3fb3038Ba60713E62B1fc`. That address could
+  whitelist a zero window policy; we cannot. Worth asking the deployer for,
+  not something to design around.
+- Testnet policy `0xd6a4217588F6B1F5657a92A3e94E6422aD771cEA` uses 900
+  seconds with quorum 1, so testnet timing does not predict mainnet timing.
+
+### There is a legitimate faster path, and it is same block
+
+The kernel contains no time logic at all. `complete(jobId, reason, params)`
+has exactly one authorisation check: `msg.sender == job.evaluator`. The
+evaluator is whatever address the caller passes to `createJob`, written once
+and never mutable. A verifier called `complete` on live mainnet jobs with
+411,571 seconds still on their dispute windows and it succeeded.
+
+Two gates make this harder than it looks, and both are enforced only by the
+real kernel, so a mock will not catch them:
+
+- `createJob` requires a non zero hook that answers ERC-165 for the
+  `IACPHook` interface id `0x7ff6bc9e`. A zero address reverts
+  `HookRequired()`, an EOA or a plain contract reverts
+  `HookMissingInterface()`.
+- The only `IACPHook` already deployed on mainnet is the EvaluatorRouter
+  itself, and its `beforeAction` reverts `PolicyNotSet()` when funding a job
+  it does not evaluate. So a job with a non router evaluator needs its own
+  hook. That is what `TrustListHook` is for.
+
+`complete()` also requires the job to be in SUBMITTED, so the provider's
+submission cannot be skipped.
+
+### What we built as a result
+
+`HireRail` offers both, and the difference is stated to the user rather than
+buried:
+
+- **Direct**: the rail is the evaluator and `TrustListHook` is the hook.
+  The only code path that releases escrow is `accept`, which reverts for
+  anyone but the recorded hirer. Payout lands in the same block. The agent
+  is trusting the hirer. This is not dispute protected and must never be
+  described as such.
+- **Protected**: the router is evaluator and hook, the whitelisted
+  OptimisticPolicy decides, settlement is permissionless once the seven day
+  window closes, and neither side can act unilaterally.
+
+A protected job whose deadline falls inside the dispute window expires before
+it can settle, which would strand escrow for a week. `HireRail` reads
+`disputeWindow()` from the policy at deployment and rejects those hires with
+`DeadlineTooSoon()`.
+
+Proven end to end against the live mainnet contracts in
+`contracts/test/HireRailFork.t.sol`: seven tests, including same block payout
+in direct mode, the full seven day wait in protected mode, and the fact that
+neither the contract owner nor the agent can release a direct escrow.
+
+Other live values confirmed: `platformFeeBP` is 0 so the provider receives
+the entire budget, `MAX_EXPIRY_DURATION` is 31536000, `createJob` rejects any
+deadline not strictly more than five minutes out, and `claimRefund` is
+permissionless and not pausable. The payment token U is an upgradeable proxy
+with a live `paused()` (currently false) owned by
+`0x59F94AdE4F881f21ea608AD4448bf70B78e37187`, so settlement depends on a
+token we do not control. That belongs in the risk section of the submission.
