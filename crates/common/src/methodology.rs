@@ -52,6 +52,7 @@ pub struct Reputation {
     pub funding_cluster_size: usize,
     pub coreview_shared_agents: i64,
     pub coreview_peers: i64,
+    pub fresh_window_secs: i64,
     pub cluster_cap_rule: &'static str,
     pub penalties: Vec<Penalty>,
 }
@@ -95,6 +96,7 @@ pub fn current() -> Methodology {
             funding_cluster_size: crate::methodology::CLUSTER_LARGE,
             coreview_shared_agents: crate::methodology::MIN_SHARED_AGENTS,
             coreview_peers: crate::methodology::COREVIEW_PEERS,
+            fresh_window_secs: crate::methodology::FRESH_WINDOW_SECS,
             cluster_cap_rule:
                 "For each agent, reviewers are grouped by cluster and a cluster contributes one voice at the weight of its strongest member. Without this, twenty downweighted addresses still outvote one real reviewer by sheer count.",
             penalties: penalties(),
@@ -125,6 +127,18 @@ pub const MIN_SHARED_AGENTS: i64 = 20;
 pub const COREVIEW_PEERS: i64 = 3;
 pub const PRIOR_M: f64 = 5.0;
 pub const MIN_EVIDENCE: f64 = 1.0;
+
+/// How soon after being funded a first review counts as "provisioned to
+/// vote". The spec's first guess was seven days; the registry's own data
+/// draws the line far tighter. Grouping every reviewer by the gap between
+/// its funding and its first review gives: under a minute, 28 addresses
+/// averaging 0.3 other transfers; under an hour, 12 averaging 0.9; under a
+/// day, 7 averaging 2.3; under a week, 5 averaging 28.2; longer, 51
+/// averaging 63.0. Everything inside a day has essentially no other life on
+/// chain, and everything past a week clearly does. So the threshold is a
+/// day, and a genuinely new person who funds a wallet and reviews later in
+/// the week is not punished for it.
+pub const FRESH_WINDOW_SECS: i64 = 86_400;
 
 pub const P_FUNDING_CLUSTER: f64 = 0.25;
 pub const P_SHARED_FUNDER: f64 = 0.5;
@@ -177,8 +191,8 @@ pub fn penalties() -> Vec<Penalty> {
         Penalty {
             id: "fresh_address",
             factor: P_FRESH_ADDRESS,
-            detects: "funded less than seven days before its first review",
-            why: "Wallets created just in time to vote are the oldest trick there is.",
+            detects: "funded less than 24 hours before its first review",
+            why: "Wallets created just in time to vote are the oldest trick there is. We measured where the line actually falls on this registry: addresses that reviewed within a day of being funded average under three other transfers ever, while those funded a week or more beforehand average sixty three. A day is where provisioning stops and real use starts.",
         },
         Penalty {
             id: "reciprocal",

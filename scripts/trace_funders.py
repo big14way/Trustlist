@@ -78,6 +78,28 @@ def first_inbound(addr):
     }
 
 
+def block_times(blocks):
+    """Timestamp every funding block, batched. The fresh_address signal
+    compares funding time against first review time, so without these the
+    rule is published but never fires."""
+    out = {}
+    blocks = sorted({b for b in blocks if b})
+    for i in range(0, len(blocks), 20):
+        group = blocks[i : i + 20]
+        payload = [
+            {"jsonrpc": "2.0", "id": j, "method": "eth_getBlockByNumber",
+             "params": [hex(b), False]}
+            for j, b in enumerate(group)
+        ]
+        res = rpc(payload)
+        for item in res:
+            r = item.get("result")
+            if r and r.get("timestamp"):
+                out[group[item["id"]]] = int(r["timestamp"], 16)
+        time.sleep(0.3)
+    return out
+
+
 def outbound_count(addr):
     """How much this address does besides leaving feedback."""
     res = rpc({
@@ -113,16 +135,20 @@ def main():
             if i % 20 == 0:
                 print(f"  {i}/{len(addrs)}", file=sys.stderr)
 
+    print("timestamping funding blocks", file=sys.stderr)
+    times = block_times([(fi or {}).get("block") for _, fi, _ in rows])
+
     tsv = os.path.join(ROOT, "scripts", "funders.tsv")
     with open(tsv, "w") as f:
         for a, fi, oc in rows:
             funder = (fi or {}).get("funder") or ""
             block = (fi or {}).get("block") or 0
-            f.write(f"{a[2:]}\t{funder[2:] if funder else ''}\t{block}\t{oc}\n")
+            ts = times.get(block, 0)
+            f.write(f"{a[2:]}\t{funder[2:] if funder else ''}\t{block}\t{oc}\t{ts}\n")
 
     psql("drop table if exists funder_stage; "
          "create table funder_stage (reviewer_hex text, funder_hex text, "
-         "first_block bigint, outbound_count int)", capture=False)
+         "first_block bigint, outbound_count int, funded_ts bigint)", capture=False)
     with open(tsv) as f:
         subprocess.run(
             ["docker", "compose", "exec", "-T", "db", "psql", "-U", "trustlist",
@@ -130,15 +156,19 @@ def main():
              "\\copy funder_stage from pstdin"],
             stdin=f, check=True, cwd=ROOT)
     psql("""
-      insert into reviewer_funding (reviewer, funder, first_block, outbound_count, traced_at)
+      insert into reviewer_funding (reviewer, funder, first_block, outbound_count,
+                                    first_funded_at, traced_at)
       select decode(reviewer_hex,'hex'),
              case when funder_hex = '' then null else decode(funder_hex,'hex') end,
-             first_block, outbound_count, now()
+             first_block, outbound_count,
+             case when funded_ts > 0 then to_timestamp(funded_ts) else null end,
+             now()
       from funder_stage
       on conflict (reviewer) do update set
         funder = excluded.funder,
         first_block = excluded.first_block,
         outbound_count = excluded.outbound_count,
+        first_funded_at = excluded.first_funded_at,
         traced_at = now();
       drop table funder_stage;
     """, capture=False)

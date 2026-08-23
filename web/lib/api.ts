@@ -219,6 +219,7 @@ export type Methodology = {
     funding_cluster_size: number;
     coreview_shared_agents: number;
     coreview_peers: number;
+    fresh_window_secs: number;
     cluster_cap_rule: string;
     penalties: Penalty[];
   };

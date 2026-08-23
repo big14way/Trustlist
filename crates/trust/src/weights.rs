@@ -145,7 +145,7 @@ pub fn compute(
 
             // Funded and reviewing within the week.
             if let Some(secs) = f.seconds_funded_before_first_review {
-                if (0..7 * 24 * 3600).contains(&secs) {
+                if (0..m::FRESH_WINDOW_SECS).contains(&secs) {
                     weight *= m::P_FRESH_ADDRESS;
                     flags.push("fresh_address".into());
                 }

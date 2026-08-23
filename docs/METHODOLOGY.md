@@ -5,7 +5,7 @@ trust engine runs on. Regenerate with `bash scripts/gen_methodology.sh`.
 Do not hand edit: a threshold changed here would be a claim the code does
 not honour.
 
-At the time of writing: 293,780 agents registered, 5,562 answering when probed, 1,704,266 probes recorded, and 29,511 reviews on chain written by 105 distinct addresses.
+At the time of writing: 293,785 agents registered, 5,562 answering when probed, 1,714,844 probes recorded, and 29,511 reviews on chain written by 105 distinct addresses.
 
 ## Is the agent alive
 
@@ -46,7 +46,7 @@ reviews were seen next to how many were counted.
 | `one_shot` | x 0.3 | exactly one review, and fewer than five transfers ever | An address created to say one thing and then never used again is not a participant. |
 | `no_other_activity` | x 0.5 | fewer than five transfers out, ever | Reputation should cost something. An address with no other life on chain paid nothing to have an opinion. |
 | `single_value_only` | x 0.5 | three or more reviews that are all the identical score | A reviewer who has never once distinguished between two agents is not evaluating them. |
-| `fresh_address` | x 0.5 | funded less than seven days before its first review | Wallets created just in time to vote are the oldest trick there is. |
+| `fresh_address` | x 0.5 | funded less than 24 hours before its first review | Wallets created just in time to vote are the oldest trick there is. We measured where the line actually falls on this registry: addresses that reviewed within a day of being funded average under three other transfers ever, while those funded a week or more beforehand average sixty three. A day is where provisioning stops and real use starts. |
 | `reciprocal` | x 0.4 | rates an agent whose owner rates an agent it owns | Mutual praise between two owners is an arrangement, not evidence. |
 | `high_revocation` | x 0.3 | three or more reviews, at least half later revoked | Feedback written and withdrawn is a way to be counted in a snapshot and then vanish. |
 

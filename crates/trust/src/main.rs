@@ -205,12 +205,15 @@ async fn run_trust(pool: &PgPool) -> anyhow::Result<(usize, usize)> {
                     count(distinct f.agent_id)::bigint,
                     min(f.value / power(10, f.value_decimals))::float8,
                     max(f.value / power(10, f.value_decimals))::float8,
-                    null::bigint,
+                    -- Seconds between the wallet being funded and its
+                    -- first review. A wallet funded minutes before it
+                    -- starts voting is the oldest trick there is.
+                    extract(epoch from (min(f.block_time) - rf.first_funded_at))::bigint,
                     rf.outbound_count,
                     rf.funder
              from feedback f
              left join reviewer_funding rf on rf.reviewer = f.reviewer
-             group by f.reviewer, rf.outbound_count, rf.funder",
+             group by f.reviewer, rf.outbound_count, rf.funder, rf.first_funded_at",
     )
     .fetch_all(pool)
     .await?;
