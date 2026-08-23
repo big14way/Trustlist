@@ -70,9 +70,18 @@ say "7. tests"
 cargo test --workspace
 ( cd contracts && forge test -vv )
 if find contracts/src -name '*.sol' | grep -q .; then
-  COV=$( cd contracts && forge coverage --report summary \
-    | awk '/^\| Total/ {gsub(/%/,"",$4); print int($4)}' )
-  [ "${COV:-0}" -ge 90 ] || fail "contract coverage ${COV}% is under 90"
+  # SPEC.md Section 14 sets the bar on src/, the code we actually ship.
+  # Deploy scripts and test helpers are tooling and are reported separately
+  # by forge; including them would measure the wrong thing.
+  COV_REPORT=$( cd contracts && forge coverage --report summary 2>/dev/null )
+  echo "$COV_REPORT" | grep -E '^\| (src/|File)' || true
+  WORST=$( echo "$COV_REPORT" \
+    | awk -F'|' '/^\| src\// { gsub(/%.*/,"",$3); gsub(/[^0-9.]/,"",$3); if ($3 != "") print $3 }' \
+    | sort -n | head -1 )
+  [ -n "$WORST" ] || fail "could not read coverage for contracts/src"
+  awk -v c="$WORST" 'BEGIN { exit (c+0 >= 90) ? 0 : 1 }' \
+    || fail "lowest contracts/src coverage is ${WORST}%, under 90"
+  echo "lowest contracts/src line coverage: ${WORST}%"
 else
   echo "no contracts yet, coverage check begins when contracts/src has source"
 fi
