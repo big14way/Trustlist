@@ -179,3 +179,33 @@ permissionless and not pausable. The payment token U is an upgradeable proxy
 with a live `paused()` (currently false) owned by
 `0x59F94AdE4F881f21ea608AD4448bf70B78e37187`, so settlement depends on a
 token we do not control. That belongs in the risk section of the submission.
+
+## 14. PancakeSwap data sources and addresses (23 August 2026)
+
+Verified before the reference agents were written.
+
+- **Pool data.** PancakeSwap's own explorer serves live V3 pool statistics for
+  BSC with no API key at
+  `https://explorer.pancakeswap.com/api/cached/pools/v3/bsc/list/top`,
+  returning 33 top pools with TVL, 24 hour and 7 day volume, fees, current
+  tick, sqrtPrice, and liquidity. `api.pancakeswap.info` returns 500 and
+  `configs.pancakeswap.com/api/data/cached/farms` returns 400, so neither is
+  usable. There is still no Infinity specific subgraph.
+- **NonfungiblePositionManager on BSC:**
+  `0x46A15B0b27311cedF172AB29E4f4766fbE7F4364`. The developer docs list three
+  candidates without labelling the chain, so all three were called on BSC
+  mainnet: this one answers `name()` with "Pancake V3 Positions NFT-V1",
+  `symbol()` with "PCS-V3-POS", and `totalSupply()` with 4,903,899. The other
+  two (`0xa815e2eD...2883`, `0x427bF5b3...96c1`) have no meaningful bytecode
+  on BSC and belong to other chains.
+- **PancakeV3Factory on BSC:** `0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865`,
+  confirmed by resolving USDT/WBNB at the 0.05 percent tier to pool
+  `0x36696169C63e42cd08ce11f5deeBbCeBae652050`.
+- **Position reads work end to end.** Position 7238953 reads as CAKE/USDT at
+  the 0.25 percent tier, ticks 4850 to 5450, liquidity 8.066e21, in pool
+  `0x7f51c8aaa6b0599abd16674e2b17fec7a9f674a1`, whose current tick was 5459 at
+  the time of writing. That position is genuinely out of range, which is what
+  the Range Keeper reports.
+- `totalSupply()` on the position manager counts live NFTs, not the highest
+  token id, so enumerating positions has to go through `tokenByIndex`.
+  Guessing an id near the supply returns "Invalid token ID".
