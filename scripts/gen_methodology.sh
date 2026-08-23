@@ -40,6 +40,18 @@ if s.get("measured"):
       f"chain written by {s['reviewers']} distinct addresses.")
     w("")
 
+w("## What kind of agent is it")
+w("")
+w(m["categories"]["how"])
+w("")
+w("| category | matches | meaning |")
+w("|---|---|---|")
+for c in m["categories"]["rules"]:
+    w(f"| `{c['id']}` | {c['matches']} | {c['matched_agents_note']} |")
+w("")
+w(m["categories"]["caveat"])
+w("")
+
 w("## Is the agent alive")
 w("")
 w("Every agent's declared endpoints are resolved and called on a schedule, and")

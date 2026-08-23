@@ -53,6 +53,21 @@ export default async function MethodologyPage() {
         </p>
       ) : null}
 
+      <h2 className="font-display mt-10 text-2xl">What kind of agent is it</h2>
+      <p className="mt-2 text-sm text-ink/80">{m.categories.how}</p>
+      <ul className="mt-3">
+        {m.categories.rules.map((c) => (
+          <li key={c.id} className="border-t border-dormant/30 py-2">
+            <span className="font-data text-sm">{c.id}</span>
+            <p className="mt-1 text-sm text-ink/80">{c.matched_agents_note}</p>
+            <p className="font-data mt-0.5 text-[11px] text-dormant">
+              matches: {c.matches}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-sm text-ink/80">{m.categories.caveat}</p>
+
       <h2 className="font-display mt-10 text-2xl">Is the agent alive</h2>
       <p className="mt-2 text-sm text-ink/80">
         We resolve every agent&apos;s declared endpoints and call them on a

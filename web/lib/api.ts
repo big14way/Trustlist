@@ -194,7 +194,18 @@ export type Penalty = {
   why: string;
 };
 
+export type CategoryRule = {
+  id: string;
+  matches: string;
+  matched_agents_note: string;
+};
+
 export type Methodology = {
+  categories: {
+    how: string;
+    caveat: string;
+    rules: CategoryRule[];
+  };
   liveness: {
     formula: string;
     uptime_weight: number;

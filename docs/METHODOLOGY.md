@@ -5,7 +5,22 @@ trust engine runs on. Regenerate with `bash scripts/gen_methodology.sh`.
 Do not hand edit: a threshold changed here would be a claim the code does
 not honour.
 
-At the time of writing: 293,785 agents registered, 5,562 answering when probed, 1,714,844 probes recorded, and 29,511 reviews on chain written by 105 distinct addresses.
+At the time of writing: 293,785 agents registered, 5,562 answering when probed, 1,719,021 probes recorded, and 29,511 reviews on chain written by 105 distinct addresses.
+
+## What kind of agent is it
+
+An agent's categories are inferred from the text its own owner wrote in its registration card: the name and description. A card must contain both an action word and the thing being acted on before a category is assigned, so 'track trust and alignment' does not become a monitoring agent while 'monitors a portfolio, positions and treasury' does.
+
+| category | matches | meaning |
+|---|---|---|
+| `monitoring` | monitor, watch, track, or alert, together with wallet, position, market, price, portfolio, balance, liquidation, or treasury | watches markets, wallets, or positions and reports |
+| `grid-trading` | grid, together with trade, order, bot, strategy, or range | runs automated orders within a set range |
+| `health-factor` | health factor, liquidation, or collateral | protects a lending position from liquidation |
+| `yield` | yield, apy, apr, farming, or staking | moves capital toward a better return |
+| `rebalancing` | rebalance, liquidity range, lp position, or concentrated liquidity | manages a liquidity range and resets it |
+| `pancakeswap` | pancakeswap or pancake | names PancakeSwap as the venue it works on |
+
+This is a keyword rule over free text, not a claim about what the agent does. It will mislabel an agent whose description is vague, and it will miss one that describes its work in words we did not anticipate. An agent with no match is filed under other rather than guessed at. If you own an agent and we have it wrong, the fix is a clearer description in your card, and we will pick it up on the next pass.
 
 ## Is the agent alive
 

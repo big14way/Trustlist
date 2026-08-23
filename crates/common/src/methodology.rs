@@ -18,7 +18,22 @@ pub struct Penalty {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct CategoryRule {
+    pub id: &'static str,
+    pub matches: &'static str,
+    pub matched_agents_note: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Categories {
+    pub how: &'static str,
+    pub caveat: &'static str,
+    pub rules: Vec<CategoryRule>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Methodology {
+    pub categories: Categories,
     pub liveness: Liveness,
     pub reputation: Reputation,
     pub ranking: Ranking,
@@ -68,6 +83,11 @@ pub struct Ranking {
 /// The published parameter set. Values here are the ones the engine uses.
 pub fn current() -> Methodology {
     Methodology {
+        categories: Categories {
+            how: "An agent's categories are inferred from the text its own owner wrote in its registration card: the name and description. A card must contain both an action word and the thing being acted on before a category is assigned, so 'track trust and alignment' does not become a monitoring agent while 'monitors a portfolio, positions and treasury' does.",
+            caveat: "This is a keyword rule over free text, not a claim about what the agent does. It will mislabel an agent whose description is vague, and it will miss one that describes its work in words we did not anticipate. An agent with no match is filed under other rather than guessed at. If you own an agent and we have it wrong, the fix is a clearer description in your card, and we will pick it up on the next pass.",
+            rules: category_rules(),
+        },
         liveness: Liveness {
             formula: "liveness = 100 * (0.55*uptime_7d + 0.30*card_quality + 0.15*latency_factor)",
             uptime_weight: 0.55,
@@ -149,6 +169,41 @@ pub const P_SINGLE_VALUE_ONLY: f64 = 0.5;
 pub const P_FRESH_ADDRESS: f64 = 0.5;
 pub const P_RECIPROCAL: f64 = 0.4;
 pub const P_HIGH_REVOCATION: f64 = 0.3;
+
+pub fn category_rules() -> Vec<CategoryRule> {
+    vec![
+        CategoryRule {
+            id: "monitoring",
+            matches: "monitor, watch, track, or alert, together with wallet, position, market, price, portfolio, balance, liquidation, or treasury",
+            matched_agents_note: "watches markets, wallets, or positions and reports",
+        },
+        CategoryRule {
+            id: "grid-trading",
+            matches: "grid, together with trade, order, bot, strategy, or range",
+            matched_agents_note: "runs automated orders within a set range",
+        },
+        CategoryRule {
+            id: "health-factor",
+            matches: "health factor, liquidation, or collateral",
+            matched_agents_note: "protects a lending position from liquidation",
+        },
+        CategoryRule {
+            id: "yield",
+            matches: "yield, apy, apr, farming, or staking",
+            matched_agents_note: "moves capital toward a better return",
+        },
+        CategoryRule {
+            id: "rebalancing",
+            matches: "rebalance, liquidity range, lp position, or concentrated liquidity",
+            matched_agents_note: "manages a liquidity range and resets it",
+        },
+        CategoryRule {
+            id: "pancakeswap",
+            matches: "pancakeswap or pancake",
+            matched_agents_note: "names PancakeSwap as the venue it works on",
+        },
+    ]
+}
 
 pub fn penalties() -> Vec<Penalty> {
     vec![

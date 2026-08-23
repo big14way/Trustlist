@@ -68,13 +68,83 @@ function Card({ agent, uptime }: { agent: AgentCard; uptime: UptimeMap }) {
   );
 }
 
-export default async function Home() {
+const CATEGORIES = [
+  { id: "", label: "All" },
+  { id: "monitoring", label: "Monitoring" },
+  { id: "grid-trading", label: "Grid trading" },
+  { id: "yield", label: "Yield" },
+  { id: "health-factor", label: "Health factor" },
+  { id: "rebalancing", label: "Rebalancing" },
+  { id: "pancakeswap", label: "PancakeSwap" },
+];
+
+function FilterRail({
+  category,
+  showDormant,
+  dormantCount,
+}: {
+  category: string;
+  showDormant: boolean;
+  dormantCount: number;
+}) {
+  const href = (c: string, d: boolean) => {
+    const p = new URLSearchParams();
+    if (c) p.set("category", c);
+    if (d) p.set("dormant", "1");
+    const qs = p.toString();
+    return qs ? `/?${qs}` : "/";
+  };
+  return (
+    <div className="mt-6">
+      <ul className="flex flex-wrap gap-2">
+        {CATEGORIES.map((c) => (
+          <li key={c.id}>
+            <a
+              href={href(c.id, showDormant)}
+              className={`inline-block rounded border px-3 py-1 text-sm ${
+                category === c.id
+                  ? "border-ink bg-ink text-paper"
+                  : "border-dormant/50 hover:border-ink"
+              }`}
+            >
+              {c.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs">
+        <a
+          href={href(category, !showDormant)}
+          className="underline text-ink/70 hover:text-ink"
+        >
+          {showDormant
+            ? "Hide the agents that never answer"
+            : `Show the ${dormantCount.toLocaleString()} agents that never answer`}
+        </a>
+      </p>
+    </div>
+  );
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string; dormant?: string }>;
+}) {
+  const sp = await searchParams;
+  const category = sp.category ?? "";
+  const showDormant = sp.dormant === "1";
+
   const stats = await fetchStats();
   // Default marketplace filter: only agents whose status is earned by
   // enough probes appear. The measuring majority is a count, not a listing.
-  const agents = await fetchAgents(
-    new URLSearchParams({ sort: "rank", limit: "24", status: "live,flaky" }),
-  );
+  const query = new URLSearchParams({
+    sort: "rank",
+    limit: "24",
+    status: showDormant ? "down,dormant" : "live,flaky",
+  });
+  if (category) query.set("category", category);
+  const agents = await fetchAgents(query);
   const uptime =
     (await fetchUptime(agents?.items.map((a) => a.agent_id) ?? [])) ?? {};
 
@@ -137,10 +207,18 @@ export default async function Home() {
         </p>
       ) : null}
 
-      <section aria-label="Agents" className="mt-12">
+      <FilterRail
+        category={category}
+        showDormant={showDormant}
+        dormantCount={stats ? stats.down + stats.measuring : 0}
+      />
+
+      <section aria-label="Agents" className="mt-8">
         <p className="eyebrow text-dormant">
-          LIVE AND FLAKY AGENTS, RANKED. MEASURING AGENTS JOIN WHEN THEY EARN
-          A STATUS.
+          {showDormant
+            ? "AGENTS THAT DO NOT ANSWER, OR HAVE NOT BEEN MEASURED ENOUGH YET"
+            : "AGENTS THAT ANSWER, RANKED"}
+          {category ? ` · ${category.toUpperCase()}` : ""}
         </p>
         {agents && agents.items.length > 0 ? (
           <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -149,8 +227,10 @@ export default async function Home() {
             ))}
           </ul>
         ) : (
-          <p className="mt-4 text-sm text-ink/70">
-            Nothing to show yet. The prober is measuring; reload in a minute.
+          <p className="mt-4 max-w-xl text-sm text-ink/70">
+            {category
+              ? `No agent in this category is answering right now. Try another category, or show the agents that never answer to see who claimed the label without backing it up.`
+              : "Nothing to show yet. The prober is measuring; reload in a minute."}
           </p>
         )}
       </section>

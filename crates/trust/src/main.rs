@@ -156,6 +156,10 @@ async fn main() -> anyhow::Result<()> {
             }
             Err(e) => tracing::error!(%e, "trust pass failed"),
         }
+        match run_categories(&pool).await {
+            Ok(rows) => tracing::info!(rows, "categories assigned"),
+            Err(e) => tracing::error!(%e, "category pass failed"),
+        }
         match run_scoring(&pool).await {
             Ok(rows) => tracing::info!(rows, "scoring pass complete"),
             Err(e) => tracing::error!(%e, "scoring pass failed"),
@@ -173,10 +177,52 @@ async fn run_scoring(pool: &PgPool) -> anyhow::Result<u64> {
     Ok(result.rows_affected())
 }
 
+/// Classify agents into the categories the marketplace filters on.
+async fn run_categories(pool: &PgPool) -> anyhow::Result<u64> {
+    let result = sqlx::query(CATEGORY_SQL).execute(pool).await?;
+    Ok(result.rows_affected())
+}
+
 async fn refresh_stats(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query(STATS_SQL).execute(pool).await?;
     Ok(())
 }
+
+/// Assign categories from the text an agent's own owner wrote in its card.
+/// Every rule needs an action word and the thing being acted on, so the
+/// boilerplate that fills this registry ("track trust, alignment") does not
+/// masquerade as a monitoring agent. The rules are published verbatim at
+/// /v1/methodology, and anything unmatched is filed as other rather than
+/// guessed at.
+const CATEGORY_SQL: &str = "
+update agents a
+set categories = case when cardinality(c.cats) = 0 then array['other'] else c.cats end
+from (
+  select agent_id,
+         array_remove(array[
+           case when d ~ '(monitor|watch|track|alert)'
+                 and d ~ '(wallet|position|market|price|portfolio|balance|liquidat|treasury)'
+                then 'monitoring' end,
+           case when d ~ 'grid' and d ~ '(trad|order|bot|strateg|range)'
+                then 'grid-trading' end,
+           case when d ~ '(health factor|liquidation|collateral)'
+                then 'health-factor' end,
+           case when d ~ '(yield|apy|apr|farming|staking)'
+                then 'yield' end,
+           case when d ~ '(rebalanc|liquidity range|lp position|concentrated liquidity)'
+                then 'rebalancing' end,
+           case when d ~ '(pancakeswap|pancake)'
+                then 'pancakeswap' end
+         ], null) as cats
+  from (
+    select agent_id,
+           lower(coalesce(name,'') || ' ' || coalesce(description,'')) as d
+    from agents where card_status = 'ok'
+  ) t
+) c
+where c.agent_id = a.agent_id
+  and a.categories is distinct from
+      (case when cardinality(c.cats) = 0 then array['other'] else c.cats end)";
 
 /// One row of per reviewer behaviour joined to its funding trace:
 /// reviewer, feedback count, revoked count, distinct agents, min and max
