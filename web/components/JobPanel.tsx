@@ -72,7 +72,8 @@ export function JobPanel({ job }: { job: Job }) {
     job.state === "funded" &&
     deadline !== null &&
     deadline.getTime() < now;
-  const canDecide = job.mode === "direct" && job.state === "submitted" && isMine;
+  const canDecide =
+    job.mode === "direct" && job.state === "submitted" && isMine;
 
   async function send(
     fn: "accept" | "rejectWork",

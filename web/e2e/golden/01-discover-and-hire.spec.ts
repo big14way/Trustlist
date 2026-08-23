@@ -26,7 +26,10 @@ async function listJobs(): Promise<Job[]> {
 }
 
 function highestJobId(jobs: Job[]): bigint {
-  return jobs.reduce((max, j) => (BigInt(j.job_id) > max ? BigInt(j.job_id) : max), 0n);
+  return jobs.reduce(
+    (max, j) => (BigInt(j.job_id) > max ? BigInt(j.job_id) : max),
+    0n,
+  );
 }
 
 test.beforeEach(async ({ page }) => {
@@ -53,7 +56,9 @@ test("discover an answering agent, hire it, and release the escrow", async ({
   );
 
   // The marketplace leads with agents that answered when we probed.
-  const firstCard = page.locator("main section[aria-label='Agents'] li").first();
+  const firstCard = page
+    .locator("main section[aria-label='Agents'] li")
+    .first();
   await expect(firstCard).toBeVisible();
   await expect(firstCard.getByText(/live|flaky/i).first()).toBeVisible();
 
@@ -70,7 +75,9 @@ test("discover an answering agent, hire it, and release the escrow", async ({
   await sheet.getByRole("button", { name: /Connect wallet/i }).click();
 
   await sheet.locator("input").first().fill("2");
-  const confirm = sheet.getByRole("button", { name: /Hire for|Approve and hire/i });
+  const confirm = sheet.getByRole("button", {
+    name: /Hire for|Approve and hire/i,
+  });
   await expect(confirm).toBeEnabled();
   await confirm.click();
 
@@ -101,7 +108,9 @@ test("discover an answering agent, hire it, and release the escrow", async ({
     .filter({ hasText: `JOB ${job.job_id} ` });
   await expect(async () => {
     await page.reload();
-    await expect(panel.getByRole("button", { name: /Accept and pay/i })).toBeVisible({
+    await expect(
+      panel.getByRole("button", { name: /Accept and pay/i }),
+    ).toBeVisible({
       timeout: 5_000,
     });
   }).toPass({ timeout: 60_000 });

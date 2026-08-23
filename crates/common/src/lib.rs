@@ -3,6 +3,7 @@
 
 pub mod config;
 pub mod methodology;
+pub mod snapshot;
 
 use anyhow::Context;
 use sqlx::postgres::PgPoolOptions;

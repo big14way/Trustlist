@@ -21,7 +21,9 @@ export function CollapseCounter({
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     const seen = sessionStorage.getItem("collapse-ran") === "1";
     if (reduced || seen) {
       setValue(answering);

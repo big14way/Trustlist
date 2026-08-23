@@ -19,10 +19,10 @@ export const isDevChain = CHAIN_ID === 31337;
 /// Deployed addresses, supplied by environment so the same build can point
 /// at a local chain or mainnet. Empty means the hire flow is not configured
 /// and the UI says so rather than failing at signing time.
-export const HIRE_RAIL = (process.env.NEXT_PUBLIC_HIRE_RAIL ?? "") as `0x${string}` | "";
+export const HIRE_RAIL = (process.env.NEXT_PUBLIC_HIRE_RAIL ?? "") as
+  `0x${string}` | "";
 export const PAYMENT_TOKEN = (process.env.NEXT_PUBLIC_PAYMENT_TOKEN ?? "") as
-  | `0x${string}`
-  | "";
+  `0x${string}` | "";
 
 export const hireConfigured = HIRE_RAIL !== "" && PAYMENT_TOKEN !== "";
 
@@ -73,9 +73,7 @@ export const erc20Abi = [
 ] as const;
 
 export function explorerTx(hash: string): string {
-  return isDevChain
-    ? `#local-tx-${hash}`
-    : `https://bscscan.com/tx/${hash}`;
+  return isDevChain ? `#local-tx-${hash}` : `https://bscscan.com/tx/${hash}`;
 }
 
 export function explorerAddress(addr: string): string {

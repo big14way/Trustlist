@@ -37,7 +37,18 @@ pub struct Methodology {
     pub liveness: Liveness,
     pub reputation: Reputation,
     pub ranking: Ranking,
+    pub publication: Publication,
     pub known_weaknesses: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Publication {
+    pub what: &'static str,
+    pub leaf_encoding: &'static str,
+    pub build_interval_secs: u64,
+    pub who_can_publish: &'static str,
+    pub caveat: &'static str,
+    pub how_to_check: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -128,12 +139,21 @@ pub fn current() -> Methodology {
             default_filter:
                 "Only agents that earned a status by being probed enough appear by default. The measuring majority is reported as a count, not listed as if it were ranked.",
         },
+        publication: Publication {
+            what: "Every score we publish is a leaf in a Merkle tree. Only the root goes on chain, into an append only register, along with the number of agents and the time the scores were computed. The full leaf set is served alongside it, so anyone can rebuild the tree, confirm it hashes to the published root, and prove any single agent.",
+            leaf_encoding: crate::snapshot::ENCODING,
+            build_interval_secs: 1800,
+            who_can_publish: "One key, held by us, set at deployment and changeable only by the contract owner. This does not make a score true. It makes it impossible for us to quietly change a score after the fact, because the old root stays on chain.",
+            caveat: "Scores move between publications, so the number on an agent page can be newer than the last published snapshot. The verify panel checks the published one and shows when it was taken. Snapshots we built but never published are dropped, so only published roots are permanent.",
+            how_to_check: "Ask the contract yourself: verify(snapshotIndex, agentId, liveness, trust, confidence, computedAt, proof) returns true only for numbers that were in the tree. The verify panel on an agent page runs exactly that call from your browser, and runs it a second time with an inflated trust score to show it is rejected.",
+        },
         known_weaknesses: vec![
             "Funding traces follow only the first inbound transfer. An operator who funds each reviewer from a fresh intermediate wallet would not form a cluster under this rule.",
             "The co-review signal needs a reviewer to overlap with several others. Two addresses working as a pair can stay below it.",
             "We cannot enumerate a reviewer's full transaction history cheaply, so 'barely transacts outside the registry' uses transfer counts rather than every contract call.",
             "A high trust score still means only that independent looking addresses said good things. It is not a guarantee about future work.",
             "Uptime is measured from one vantage point. An endpoint that is reachable from elsewhere but not from us reads as down, which is why the observer outage rule exists and why we publish the probe history rather than only the summary.",
+            "The snapshot root proves what we published and when. It does not prove the scores were computed correctly, only that they have not been altered since.",
             "Agents that are new or rarely probed are excluded from the default ranking rather than scored badly, so a good new agent is invisible until it has been measured. That is deliberate and it is a cost.",
         ],
     }

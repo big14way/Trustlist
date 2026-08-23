@@ -63,8 +63,8 @@ export default async function StatsPage() {
       <main className="mx-auto max-w-[900px] px-8 py-16">
         <h1 className="font-display text-4xl">Registry health</h1>
         <p className="mt-4 text-sm text-ink/80">
-          Nothing has been measured yet, so there is nothing to report. We
-          would rather show you this than a page of zeroes.
+          Nothing has been measured yet, so there is nothing to report. We would
+          rather show you this than a page of zeroes.
         </p>
       </main>
     );
@@ -164,9 +164,8 @@ export default async function StatsPage() {
           community.
         </p>
         <p className="mt-3 max-w-2xl text-sm text-ink/80">
-          Only{" "}
-          <span className="font-data">{stats.reviewers_independent}</span> of
-          the {stats.reviewers} reviewing addresses carry full weight after
+          Only <span className="font-data">{stats.reviewers_independent}</span>{" "}
+          of the {stats.reviewers} reviewing addresses carry full weight after
           every check. The rules that decide this are published in full on{" "}
           <a className="underline" href="/methodology">
             the methodology page

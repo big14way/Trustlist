@@ -658,3 +658,156 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
 pub async fn methodology() -> impl IntoResponse {
     Json(common::methodology::current())
 }
+
+#[derive(Deserialize)]
+pub struct SnapshotQuery {
+    /// Ask for the full leaf set. It is a few megabytes at registry scale, so
+    /// it is opt in: pages want the header, a verifier wants everything.
+    #[serde(default)]
+    payload: bool,
+}
+
+/// The most recent snapshot that was actually published on chain, which is
+/// the only one a reader can verify. The newest snapshot the engine built may
+/// be newer than this; scores move, publishing is a deliberate step.
+pub async fn published_snapshot(
+    State(state): State<AppState>,
+    Query(q): Query<SnapshotQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let row = sqlx::query(
+        "select id, root_hex, agent_count, extract(epoch from computed_at)::bigint as computed_at,
+                tx_hash, block_number, onchain_index, contract, payload
+         from snapshots where published order by computed_at desc limit 1",
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    let hex = |b: Option<Vec<u8>>| {
+        b.map(|v| {
+            format!(
+                "0x{}",
+                v.iter().map(|x| format!("{x:02x}")).collect::<String>()
+            )
+        })
+    };
+    Ok(Json(json!({
+        "id": row.get::<i64, _>("id"),
+        "merkle_root": row.get::<Option<String>, _>("root_hex"),
+        "agent_count": row.get::<i32, _>("agent_count"),
+        "computed_at": row.get::<Option<i64>, _>("computed_at"),
+        "onchain_index": row.get::<Option<i32>, _>("onchain_index"),
+        "contract": hex(row.try_get("contract").ok().flatten()),
+        "tx_hash": hex(row.try_get("tx_hash").ok().flatten()),
+        "block_number": row.get::<Option<i64>, _>("block_number"),
+        "payload": if q.payload {
+            row.get::<Option<serde_json::Value>, _>("payload")
+        } else {
+            None
+        },
+    })))
+}
+
+/// The most recent Merkle snapshot of scores. With `?payload=true` the
+/// response carries every leaf, so a reader can rebuild the tree, confirm the
+/// root, and check any single agent without trusting this endpoint.
+pub async fn latest_snapshot(
+    State(state): State<AppState>,
+    Query(q): Query<SnapshotQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let row = sqlx::query(
+        "select id, root_hex, agent_count, extract(epoch from computed_at)::bigint as computed_at,
+                tx_hash, block_number, published, payload
+         from snapshots where root_hex is not null
+         order by computed_at desc limit 1",
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    let tx: Option<Vec<u8>> = row.try_get("tx_hash").ok().flatten();
+    Ok(Json(json!({
+        "id": row.get::<i64, _>("id"),
+        "merkle_root": row.get::<Option<String>, _>("root_hex"),
+        "agent_count": row.get::<i32, _>("agent_count"),
+        "computed_at": row.get::<Option<i64>, _>("computed_at"),
+        "published": row.get::<bool, _>("published"),
+        "tx_hash": tx.map(|b| format!("0x{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>())),
+        "block_number": row.get::<Option<i64>, _>("block_number"),
+        "payload": if q.payload {
+            row.get::<Option<serde_json::Value>, _>("payload")
+        } else {
+            None
+        },
+    })))
+}
+
+/// A Merkle proof for one agent in one snapshot, plus the exact leaf inputs
+/// the contract expects. Everything needed to call `TrustSnapshot.verify`
+/// yourself is in this response.
+pub async fn snapshot_proof(
+    State(state): State<AppState>,
+    Path((snapshot_id, agent_id)): Path<(String, String)>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let sid: i64 = snapshot_id.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let agent: String = agent_id.chars().filter(|c| c.is_ascii_digit()).collect();
+    if agent.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let head = sqlx::query(
+        "select root_hex, extract(epoch from computed_at)::bigint as computed_at
+         from snapshots where id = $1",
+    )
+    .bind(sid)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    // The whole leaf set, in tree order, so the proof is rebuilt from the
+    // same data the root was built from.
+    let rows = sqlx::query(
+        "select agent_id::text as agent_id, position, liveness, trust, confidence, leaf
+         from snapshot_leaves where snapshot_id = $1 order by position",
+    )
+    .bind(sid)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if rows.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let leaves: Vec<common::snapshot::B256> = rows
+        .iter()
+        .map(|r| common::snapshot::B256::from_slice(r.get::<Vec<u8>, _>("leaf").as_slice()))
+        .collect();
+    let index = rows
+        .iter()
+        .position(|r| r.get::<String, _>("agent_id") == agent)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let proof = common::snapshot::merkle_proof(&leaves, index);
+    let root = common::snapshot::merkle_root(&leaves).ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let me = &rows[index];
+
+    Ok(Json(json!({
+        "snapshot_id": sid,
+        "agent_id": agent,
+        "merkle_root": format!("{root}"),
+        "stored_root": head.get::<Option<String>, _>("root_hex"),
+        "leaf": format!("{}", leaves[index]),
+        "index": index,
+        "proof": proof.iter().map(|p| format!("{p}")).collect::<Vec<_>>(),
+        "verify_args": {
+            "agentId": agent,
+            "liveness": me.get::<i32, _>("liveness"),
+            "trust": me.get::<i32, _>("trust"),
+            "confidence": me.get::<i32, _>("confidence"),
+            "computedAt": head.get::<Option<i64>, _>("computed_at"),
+        },
+    })))
+}

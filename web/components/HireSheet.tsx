@@ -169,7 +169,15 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
         abi: hireRailAbi,
         address: HIRE_RAIL as `0x${string}`,
         functionName: "hire",
-        args: [BigInt(agentId), provider, budget, deadline, specHash, spec, mode],
+        args: [
+          BigInt(agentId),
+          provider,
+          budget,
+          deadline,
+          specHash,
+          spec,
+          mode,
+        ],
       });
       setHireHash(hash);
       await refetchBalance();
@@ -226,7 +234,12 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
             </p>
             {hireHash ? (
               <p className="font-data mt-3 text-xs break-all">
-                <a className="underline" href={explorerTx(hireHash)} target="_blank" rel="noreferrer">
+                <a
+                  className="underline"
+                  href={explorerTx(hireHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   {hireHash}
                 </a>
               </p>
@@ -290,7 +303,9 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                 <button
                   onClick={() => setMode(MODE_DIRECT)}
                   className={`rounded border p-3 text-left ${
-                    mode === MODE_DIRECT ? "border-ink bg-ink/5" : "border-dormant/50"
+                    mode === MODE_DIRECT
+                      ? "border-ink bg-ink/5"
+                      : "border-dormant/50"
                   }`}
                 >
                   <span className="block text-sm font-medium">
@@ -299,14 +314,16 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                   <span className="mt-1 block text-xs text-ink/70">
                     The agent gets paid the moment you press Accept, in one
                     transaction. If you never accept, your money comes back to
-                    you at the deadline. The agent is trusting you, and there
-                    is no dispute process.
+                    you at the deadline. The agent is trusting you, and there is
+                    no dispute process.
                   </span>
                 </button>
                 <button
                   onClick={() => setMode(MODE_PROTECTED)}
                   className={`rounded border p-3 text-left ${
-                    mode === MODE_PROTECTED ? "border-ink bg-ink/5" : "border-dormant/50"
+                    mode === MODE_PROTECTED
+                      ? "border-ink bg-ink/5"
+                      : "border-dormant/50"
                   }`}
                 >
                   <span className="block text-sm font-medium">
@@ -314,9 +331,9 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                   </span>
                   <span className="mt-1 block text-xs text-ink/70">
                     A seven day window opens when the agent delivers. You can
-                    dispute inside it, and a voter panel decides. Neither of
-                    you can move the money on your own. Slower, and the
-                    deadline has to be longer than seven days.
+                    dispute inside it, and a voter panel decides. Neither of you
+                    can move the money on your own. Slower, and the deadline has
+                    to be longer than seven days.
                   </span>
                 </button>
               </div>
@@ -370,7 +387,9 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                   </p>
                 ) : (
                   <button
-                    onClick={() => connectors[0] && connect({ connector: connectors[0] })}
+                    onClick={() =>
+                      connectors[0] && connect({ connector: connectors[0] })
+                    }
                     disabled={connecting}
                     className="w-full rounded bg-ink px-4 py-2 text-paper disabled:opacity-60"
                   >
@@ -387,9 +406,7 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
               ) : (
                 <button
                   onClick={onConfirm}
-                  disabled={
-                    step !== "form" || budget === null || insufficient
-                  }
+                  disabled={step !== "form" || budget === null || insufficient}
                   className="w-full rounded bg-ink px-4 py-2 text-paper disabled:opacity-60"
                 >
                   {step === "approving"
@@ -406,15 +423,20 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
               {hireHash ? (
                 <p className="font-data mt-3 text-xs break-all text-ink/70">
                   sent, waiting for confirmation:{" "}
-                  <a className="underline" href={explorerTx(hireHash)} target="_blank" rel="noreferrer">
+                  <a
+                    className="underline"
+                    href={explorerTx(hireHash)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     {hireHash.slice(0, 22)}…
                   </a>
                 </p>
               ) : null}
               <p className="mt-3 text-xs text-ink/60">
-                We ask your wallet to approve the exact budget and nothing
-                more. The money sits in the ERC-8183 escrow contract, not with
-                us and not with the agent.{" "}
+                We ask your wallet to approve the exact budget and nothing more.
+                The money sits in the ERC-8183 escrow contract, not with us and
+                not with the agent.{" "}
                 {mode === MODE_DIRECT
                   ? "In this mode our contract is the escrow's evaluator, and the only code path that releases it requires your address. We cannot pay the agent without you."
                   : "In this mode we are not the evaluator at all: the protocol's own router and policy decide."}

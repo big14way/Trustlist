@@ -5,10 +5,14 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+
 anyhow.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 common = { path = "../common" }
 # petgraph builds the reviewer graph so funding links become clusters.
 petgraph = "0.8"
+serde.workspace = true
+serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true

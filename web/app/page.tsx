@@ -166,13 +166,17 @@ export default async function Home({
               answering={answering}
             />{" "}
             of{" "}
-            <span className="font-data">{stats.registered.toLocaleString()}</span>{" "}
+            <span className="font-data">
+              {stats.registered.toLocaleString()}
+            </span>{" "}
             registered agents answer when probed. We check every 30 minutes and
             keep the history.
           </p>
         ) : (
           <p className="mt-4 max-w-2xl text-base">
-            <span className="font-data">{stats.registered.toLocaleString()}</span>{" "}
+            <span className="font-data">
+              {stats.registered.toLocaleString()}
+            </span>{" "}
             agents registered.{" "}
             <span className="font-data">
               {stats.with_endpoints.toLocaleString()}
@@ -186,8 +190,8 @@ export default async function Home({
       ) : stats ? (
         <p className="mt-4 max-w-2xl text-base">
           The prober has not completed its first scoring pass, so we have
-          nothing measured to report yet. We would rather say that than show
-          you a zero and call it a finding.
+          nothing measured to report yet. We would rather say that than show you
+          a zero and call it a finding.
         </p>
       ) : (
         <p className="mt-4 max-w-2xl text-base text-flag">

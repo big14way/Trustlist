@@ -1348,6 +1348,7 @@ dependencies = [
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "serde",
  "sqlx",
@@ -4891,8 +4892,11 @@ name = "trust"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "common",
  "petgraph",
+ "serde",
+ "serde_json",
  "sqlx",
  "tokio",
  "tracing",

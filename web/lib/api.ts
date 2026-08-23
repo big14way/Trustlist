@@ -82,7 +82,9 @@ export function fetchStats(): Promise<Stats | null> {
   return apiGet<Stats>("/v1/stats");
 }
 
-export function fetchAgents(params: URLSearchParams): Promise<AgentList | null> {
+export function fetchAgents(
+  params: URLSearchParams,
+): Promise<AgentList | null> {
   const qs = params.toString();
   return apiGet<AgentList>(`/v1/agents${qs ? `?${qs}` : ""}`);
 }
@@ -239,6 +241,14 @@ export type Methodology = {
     liveness_weight: number;
     trust_weight: number;
     default_filter: string;
+  };
+  publication: {
+    what: string;
+    leaf_encoding: string;
+    build_interval_secs: number;
+    who_can_publish: string;
+    caveat: string;
+    how_to_check: string;
   };
   known_weaknesses: string[];
 };

@@ -6,6 +6,10 @@ license.workspace = true
 build = "build.rs"
 
 [dependencies]
+# alloy is used for keccak256 and abi.encode so the snapshot hashing rule
+# lives in one place, shared by the trust engine that builds the tree and the
+# API that serves proofs from it.
+alloy = { version = "1", features = ["sol-types"] }
 anyhow.workspace = true
 serde.workspace = true
 sqlx.workspace = true

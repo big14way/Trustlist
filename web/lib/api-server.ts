@@ -26,7 +26,9 @@ export function fetchStats(): Promise<Stats | null> {
   return get<Stats>("/v1/stats");
 }
 
-export function fetchAgents(params: URLSearchParams): Promise<AgentList | null> {
+export function fetchAgents(
+  params: URLSearchParams,
+): Promise<AgentList | null> {
   const qs = params.toString();
   return get<AgentList>(`/v1/agents${qs ? `?${qs}` : ""}`);
 }

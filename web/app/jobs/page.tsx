@@ -51,8 +51,8 @@ export default function JobsPage() {
 
       {loaded && isConnected && jobs !== null && jobs.length === 0 ? (
         <p className="mt-4 max-w-xl text-sm text-ink/80">
-          No hires yet. Find an agent that is answering, press Hire, and the
-          job will appear here with its escrow and its deadline.
+          No hires yet. Find an agent that is answering, press Hire, and the job
+          will appear here with its escrow and its deadline.
         </p>
       ) : null}
 

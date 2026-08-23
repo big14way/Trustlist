@@ -34,6 +34,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/stats", get(routes::stats))
         .route("/v1/methodology", get(routes::methodology))
         .route("/v1/uptime", get(routes::bulk_uptime))
+        .route("/v1/snapshots/latest", get(routes::latest_snapshot))
+        .route("/v1/snapshots/published", get(routes::published_snapshot))
+        .route(
+            "/v1/snapshots/{id}/proof/{agent_id}",
+            get(routes::snapshot_proof),
+        )
         .with_state(AppState { pool })
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());

@@ -8,7 +8,10 @@ async function rpc(method: string, params: unknown[]): Promise<unknown> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
-  const body = (await res.json()) as { result?: unknown; error?: { message: string } };
+  const body = (await res.json()) as {
+    result?: unknown;
+    error?: { message: string };
+  };
   if (body.error) throw new Error(`${method}: ${body.error.message}`);
   return body.result;
 }
@@ -59,13 +62,19 @@ export async function agentDelivers(
   if (!hash) throw new Error("submit produced no transaction");
 }
 
-export async function tokenBalance(token: string, who: string): Promise<bigint> {
+export async function tokenBalance(
+  token: string,
+  who: string,
+): Promise<bigint> {
   const data = encodeFunctionData({
     abi: erc20BalanceAbi,
     functionName: "balanceOf",
     args: [who as `0x${string}`],
   });
-  const out = (await rpc("eth_call", [{ to: token, data }, "latest"])) as string;
+  const out = (await rpc("eth_call", [
+    { to: token, data },
+    "latest",
+  ])) as string;
   return BigInt(out);
 }
 

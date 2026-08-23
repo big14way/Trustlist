@@ -75,14 +75,23 @@ export default async function MethodologyPage() {
       </p>
       <p className="font-data mt-3 text-xs">{m.liveness.formula}</p>
       <div className="mt-4">
-        <Row k="Probe interval" v={`${m.liveness.probe_interval_secs / 60} minutes`} />
+        <Row
+          k="Probe interval"
+          v={`${m.liveness.probe_interval_secs / 60} minutes`}
+        />
         <Row
           k="Interval for hosts serving many registrations"
           v={`${m.liveness.bulk_host_probe_interval_secs / 3600} hours`}
         />
-        <Row k="Probes before we assign a status" v={`${m.liveness.min_probes_for_a_status}`} />
+        <Row
+          k="Probes before we assign a status"
+          v={`${m.liveness.min_probes_for_a_status}`}
+        />
         <Row k="Live" v={`uptime at or above ${m.liveness.live_threshold}`} />
-        <Row k="Flaky" v={`uptime ${m.liveness.flaky_threshold} to ${m.liveness.live_threshold}`} />
+        <Row
+          k="Flaky"
+          v={`uptime ${m.liveness.flaky_threshold} to ${m.liveness.live_threshold}`}
+        />
       </div>
       <p className="mt-3 text-sm text-ink/80">
         <strong>Counts as alive:</strong> {m.liveness.alive_http_statuses}
@@ -91,7 +100,8 @@ export default async function MethodologyPage() {
         <strong>Counts as down:</strong> {m.liveness.dead_http_statuses}
       </p>
       <p className="mt-2 text-sm text-ink/80">
-        <strong>When the fault is ours:</strong> {m.liveness.observer_outage_rule}
+        <strong>When the fault is ours:</strong>{" "}
+        {m.liveness.observer_outage_rule}
       </p>
 
       <h2 className="font-display mt-10 text-2xl">Is the praise real</h2>
@@ -99,16 +109,18 @@ export default async function MethodologyPage() {
       <p className="mt-3 text-sm text-ink/80">
         Every address that has left feedback starts at full weight and is
         multiplied down by each signal that it is not an independent voice. We
-        downweight rather than delete, and the floor is {m.reputation.weight_floor},
-        never zero, so we can always tell you how many reviews we saw next to
-        how many we counted.
+        downweight rather than delete, and the floor is{" "}
+        {m.reputation.weight_floor}, never zero, so we can always tell you how
+        many reviews we saw next to how many we counted.
       </p>
       <ul className="mt-4">
         {m.reputation.penalties.map((p) => (
           <li key={p.id} className="border-t border-dormant/30 py-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className="font-data text-sm">{p.id}</span>
-              <span className="font-data text-sm">weight &times; {p.factor}</span>
+              <span className="font-data text-sm">
+                weight &times; {p.factor}
+              </span>
             </div>
             <p className="mt-1 text-sm">{p.detects}</p>
             <p className="mt-1 text-sm text-ink/70">{p.why}</p>
@@ -122,14 +134,31 @@ export default async function MethodologyPage() {
         <strong>When we publish no score at all:</strong> a score is only shown
         once at least {m.reputation.min_evidence_to_publish} full independent
         voice survives weighting. Below that the arithmetic would be almost
-        entirely our prior, which is a guess about agents in general rather
-        than evidence about this one. An agent with hundreds of reviews and no
+        entirely our prior, which is a guess about agents in general rather than
+        evidence about this one. An agent with hundreds of reviews and no
         independent reviewer gets no score, and we say why.
       </p>
 
       <h2 className="font-display mt-10 text-2xl">How agents are ordered</h2>
       <p className="font-data mt-2 text-xs">{m.ranking.formula}</p>
       <p className="mt-2 text-sm text-ink/80">{m.ranking.default_filter}</p>
+
+      <h2 className="font-display mt-10 text-2xl">
+        What we put on chain, and how to check it
+      </h2>
+      <p className="mt-2 text-sm text-ink/80">{m.publication.what}</p>
+      <p className="mt-3 text-sm text-ink/80">
+        {m.publication.who_can_publish}
+      </p>
+      <p className="mt-3 text-sm text-ink/80">{m.publication.caveat}</p>
+      <p className="mt-3 text-sm text-ink/80">{m.publication.how_to_check}</p>
+      <p className="font-data mt-3 text-xs break-all text-ink/70">
+        {m.publication.leaf_encoding}
+      </p>
+      <Row
+        k="snapshot rebuilt every"
+        v={`${m.publication.build_interval_secs / 60} minutes`}
+      />
 
       <h2 className="font-display mt-10 text-2xl">How this can be wrong</h2>
       <ul className="mt-2 list-disc pl-5">

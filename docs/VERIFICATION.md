@@ -209,3 +209,54 @@ Verified before the reference agents were written.
 - `totalSupply()` on the position manager counts live NFTs, not the highest
   token id, so enumerating positions has to go through `tokenByIndex`.
   Guessing an id near the supply returns "Invalid token ID".
+
+## 15. The published snapshot verifies on chain (dev chain, 23 Aug 2026)
+
+The trust engine builds a Merkle tree over every agent that has earned a
+status, stores the full leaf set, and a person publishes the root. The claim
+that matters is that the proof we serve is accepted by the deployed contract
+and that a changed score is not.
+
+Measured, not asserted:
+
+- snapshot 3, 17,286 agents, root
+  `0x913d319a964f84c0cd29f7dceef9e3960d5a17e30370d2303ba27cc9f8b9b06c`
+- published as on chain entry 1 in `0x2685352E856074a879E1a8fe737B7fCA270Aa77f`
+  (dev chain 31337), tx
+  `0x713636b01754ac3fef41557991c91e94eb1f130c529d88d354cb3c024a3200fb`
+- `verify(...)` with the API's proof returns `true`
+- the same proof with trust changed to 10000 basis points returns `false`
+
+Reproduce it:
+
+```
+curl -s localhost:8080/v1/snapshots/published
+curl -s localhost:8080/v1/snapshots/3/proof/1
+cast call 0x2685352E856074a879E1a8fe737B7fCA270Aa77f \
+  'verify(uint256,uint256,uint16,uint16,uint16,uint64,bytes32[])(bool)' \
+  1 1 6134 0 476 1787492817 "[<proof hashes from the call above>]" \
+  --rpc-url http://localhost:8545
+```
+
+The gate runs this comparison itself at milestone 6 and fails if the root we
+serve differs from the root on chain, or if a proof we serve is rejected.
+
+### The Rust builder and the Solidity verifier agree
+
+Two implementations of the same hashing rule will drift, and a drift breaks
+every published proof silently. `test_the_rust_publisher_and_this_contract_agree`
+in `contracts/test/TrustSnapshot.t.sol` pins values produced by the Rust
+implementation for a fixed input set (8 agents, ids 1..8, liveness 1000+i,
+trust 2000+i, confidence 3000+i, computedAt 1787000000):
+
+- `leaf(1, 1000, 2000, 3000, 1787000000)` =
+  `0x645bf0f34344e882148472822530c0cf444318dbf29e79a0470db94802f9a926`
+- `leaf(4, 1003, 2003, 3003, 1787000000)` =
+  `0x369241a40f366fe0fb1d0e42bf64f03ac38b5c65988b642821ca13bf2edc5f43`
+- root = `0xd6bf1147f97f74082dada12a4750132d9ccb66a7a6c68a776c17421c537eddb7`
+
+Since the move of `snapshot.rs` into `crates/common`, both the trust engine
+that builds the tree and the API that serves proofs call the same code, so
+there is one implementation on our side and one in the contract.
+
+Reproduce it: `cd contracts && forge test --match-test rust_publisher -vv`

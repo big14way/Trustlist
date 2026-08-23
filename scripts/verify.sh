@@ -10,6 +10,16 @@ say()  { printf '\n== %s ==\n' "$1"; }
 
 MILESTONE=$(cat .milestone 2>/dev/null || echo 0)
 
+# The runtime checks talk to the same services and contracts the app does, so
+# they read the same environment. Without this a check that depends on an
+# address quietly skips instead of running, which is worse than failing.
+set -a
+# shellcheck disable=SC1091
+[ -f .env.example ] && source .env.example
+# shellcheck disable=SC1091
+[ -f .env ] && source .env
+set +a
+
 # psql may not exist on the host; fall back to the compose container.
 run_sql() {
   if command -v psql >/dev/null 2>&1; then
@@ -116,10 +126,36 @@ if [ "$MILESTONE" -ge 1 ]; then
     [ "$code" = "200" ] || fail "/v1/methodology returned $code"
   fi
   if [ "$MILESTONE" -ge 6 ]; then
-    for r in /v1/snapshots/latest; do
+    for r in /v1/snapshots/latest /v1/snapshots/published; do
       code=$(curl -s -o /dev/null -w '%{http_code}' "${API:-http://localhost:8080}$r")
       [ "$code" = "200" ] || fail "$r returned $code"
     done
+    # A snapshot the chain does not agree with is worse than no snapshot, so
+    # the root we serve and a proof we serve are both checked against the
+    # deployed contract, not just for a 200.
+    [ -n "${TRUST_SNAPSHOT:-}" ] || fail "TRUST_SNAPSHOT is not set, so the snapshot cannot be checked"
+    [ -n "${HIRE_RAIL_RPC:-}" ] || fail "HIRE_RAIL_RPC is not set, so the snapshot cannot be checked"
+    if true; then
+      snap=$(curl -s "${API:-http://localhost:8080}/v1/snapshots/published")
+      sid=$(printf '%s' "$snap" | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
+      idx=$(printf '%s' "$snap" | python3 -c 'import json,sys;print(json.load(sys.stdin)["onchain_index"])')
+      served=$(printf '%s' "$snap" | python3 -c 'import json,sys;print(json.load(sys.stdin)["merkle_root"])')
+      onchain=$(cast call "$TRUST_SNAPSHOT" 'snapshots(uint256)(bytes32,uint64,uint32,string)' \
+        "$idx" --rpc-url "$HIRE_RAIL_RPC" 2>/dev/null | head -1)
+      [ "$served" = "$onchain" ] || fail "served root $served does not match on chain $onchain"
+      pf=$(curl -s "${API:-http://localhost:8080}/v1/snapshots/$sid/proof/1")
+      args=$(printf '%s' "$pf" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+a = d["verify_args"]
+print(a["agentId"], a["liveness"], a["trust"], a["confidence"], a["computedAt"],
+      "[" + ",".join(d["proof"]) + "]")')
+      # shellcheck disable=SC2086
+      ok=$(cast call "$TRUST_SNAPSHOT" \
+        'verify(uint256,uint256,uint16,uint16,uint16,uint64,bytes32[])(bool)' \
+        "$idx" $args --rpc-url "$HIRE_RAIL_RPC" 2>/dev/null)
+      [ "$ok" = "true" ] || fail "a proof we serve does not verify on chain"
+    fi
   fi
   for p in /; do
     code=$(curl -s -o /dev/null -w '%{http_code}' "${WEB:-http://localhost:3000}$p")

@@ -6,6 +6,8 @@ mod score;
 mod weights;
 
 use common::config::Config;
+use common::snapshot;
+use sqlx::types::BigDecimal as Decimal;
 use sqlx::PgPool;
 use std::time::Duration;
 
@@ -168,6 +170,13 @@ async fn main() -> anyhow::Result<()> {
             Ok(()) => tracing::info!("registry snapshot refreshed"),
             Err(e) => tracing::error!(%e, "registry snapshot failed"),
         }
+        match build_snapshot(&pool).await {
+            Ok(Some((id, root, count))) => {
+                tracing::info!(id, %root, agents = count, "merkle snapshot built")
+            }
+            Ok(None) => tracing::info!("no measured agents yet, no snapshot built"),
+            Err(e) => tracing::error!(%e, "snapshot build failed"),
+        }
         tokio::time::sleep(Duration::from_secs(1800)).await;
     }
 }
@@ -181,6 +190,129 @@ async fn run_scoring(pool: &PgPool) -> anyhow::Result<u64> {
 async fn run_categories(pool: &PgPool) -> anyhow::Result<u64> {
     let result = sqlx::query(CATEGORY_SQL).execute(pool).await?;
     Ok(result.rows_affected())
+}
+
+/// Build a Merkle snapshot of the current scores and store it with its full
+/// leaf set. Publishing the root on chain is a separate, deliberate step
+/// (contracts/script/PublishSnapshot.s.sol) so the key that signs never sits
+/// in a long running service.
+async fn build_snapshot(pool: &PgPool) -> anyhow::Result<Option<(i64, String, usize)>> {
+    use snapshot::U256;
+
+    // Only agents we have actually measured belong in a snapshot. Publishing
+    // a root over agents we have never probed would be publishing noise.
+    type ScoreRow = (String, Option<Decimal>, Option<Decimal>, Option<Decimal>);
+    let rows: Vec<ScoreRow> = sqlx::query_as(
+        "select distinct on (s.agent_id)
+                    s.agent_id::text, s.liveness, s.trust, s.trust_confidence
+             from agent_scores s
+             where s.status in ('live','flaky','down')
+             order by s.agent_id, s.computed_at desc",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    let computed_at = chrono::Utc::now().timestamp() as u64;
+    let mut leaves = Vec::with_capacity(rows.len());
+    let mut records = Vec::with_capacity(rows.len());
+
+    for (agent_id, liveness, trust, confidence) in rows {
+        let to_f = |v: Option<Decimal>| -> Option<f64> {
+            v.and_then(|d| d.to_string().parse::<f64>().ok())
+        };
+        let l = snapshot::to_bps(to_f(liveness));
+        let t = snapshot::to_bps(to_f(trust));
+        let c = snapshot::to_bps(to_f(confidence).map(|v| v * 100.0));
+        let id: U256 = agent_id.parse()?;
+        let leaf = snapshot::leaf_hash(id, l, t, c, computed_at);
+        leaves.push(leaf);
+        records.push((agent_id, l, t, c, leaf));
+    }
+
+    let payload = snapshot::Payload {
+        merkle_root: String::new(), // filled in below, once the root is known
+        agent_count: records.len() as u32,
+        computed_at,
+        encoding: snapshot::ENCODING,
+        leaves: records
+            .iter()
+            .map(|(agent_id, l, t, c, leaf)| snapshot::Leaf {
+                agent_id: agent_id.clone(),
+                liveness: *l,
+                trust: *t,
+                confidence: *c,
+                computed_at,
+                leaf: format!("{leaf}"),
+            })
+            .collect(),
+    };
+
+    let root = match snapshot::merkle_root(&leaves) {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    // Refuse to store a tree we cannot prove against ourselves.
+    let probe = snapshot::merkle_proof(&leaves, 0);
+    if !snapshot::verify_proof(root, leaves[0], &probe) {
+        anyhow::bail!("built a snapshot whose own proof does not verify");
+    }
+
+    let root_hex = format!("{root}");
+    let payload = snapshot::Payload {
+        merkle_root: root_hex.clone(),
+        ..payload
+    };
+
+    let id: (i64,) = sqlx::query_as(
+        "insert into snapshots (merkle_root, agent_count, computed_at, root_hex, published, payload)
+         values ($1, $2, to_timestamp($3), $4, false, $5) returning id",
+    )
+    .bind(root.as_slice())
+    .bind(records.len() as i32)
+    .bind(computed_at as i64)
+    .bind(&root_hex)
+    .bind(sqlx::types::Json(&payload))
+    .fetch_one(pool)
+    .await?;
+
+    let mut tx = pool.begin().await?;
+    for (position, (agent_id, l, t, c, leaf)) in records.iter().enumerate() {
+        sqlx::query(
+            "insert into snapshot_leaves (snapshot_id, agent_id, position, liveness, trust, confidence, leaf)
+             values ($1, $2::numeric, $3, $4, $5, $6, $7)
+             on conflict (snapshot_id, agent_id) do nothing",
+        )
+        .bind(id.0)
+        .bind(agent_id)
+        .bind(position as i32)
+        .bind(*l as i32)
+        .bind(*t as i32)
+        .bind(*c as i32)
+        .bind(leaf.as_slice())
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+
+    // A published snapshot is permanent evidence and is kept forever. An
+    // unpublished one is only the current candidate, and at one build every
+    // cycle over the whole registry the leaf sets would otherwise grow
+    // without bound, so older candidates are dropped.
+    let pruned = sqlx::query("delete from snapshots where published = false and id <> $1")
+        .bind(id.0)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    if pruned > 0 {
+        tracing::info!(pruned, "dropped superseded snapshot candidates");
+    }
+
+    Ok(Some((id.0, root_hex, records.len())))
 }
 
 async fn refresh_stats(pool: &PgPool) -> anyhow::Result<()> {

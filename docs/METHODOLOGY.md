@@ -5,7 +5,7 @@ trust engine runs on. Regenerate with `bash scripts/gen_methodology.sh`.
 Do not hand edit: a threshold changed here would be a claim the code does
 not honour.
 
-At the time of writing: 293,785 agents registered, 5,562 answering when probed, 1,719,021 probes recorded, and 29,511 reviews on chain written by 105 distinct addresses.
+At the time of writing: 294,018 agents registered, 5,562 answering when probed, 1,794,424 probes recorded, and 29,511 reviews on chain written by 105 distinct addresses.
 
 ## What kind of agent is it
 
@@ -92,6 +92,7 @@ Only agents that earned a status by being probed enough appear by default. The m
 - We cannot enumerate a reviewer's full transaction history cheaply, so 'barely transacts outside the registry' uses transfer counts rather than every contract call.
 - A high trust score still means only that independent looking addresses said good things. It is not a guarantee about future work.
 - Uptime is measured from one vantage point. An endpoint that is reachable from elsewhere but not from us reads as down, which is why the observer outage rule exists and why we publish the probe history rather than only the summary.
+- The snapshot root proves what we published and when. It does not prove the scores were computed correctly, only that they have not been altered since.
 - Agents that are new or rarely probed are excluded from the default ranking rather than scored badly, so a good new agent is invisible until it has been measured. That is deliberate and it is a cost.
 
 ## Being a good citizen

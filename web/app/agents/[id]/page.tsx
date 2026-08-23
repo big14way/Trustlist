@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { HireButton } from "@/components/HireButton";
 import { ProbeStrip } from "@/components/ProbeStrip";
+import { VerifyDrawer } from "@/components/VerifyDrawer";
 import {
   fetchAgent,
   fetchAgentEndpoints,
@@ -20,7 +21,9 @@ function StatusPill({ status }: { status: AgentCard["status"] }) {
     measuring: "border border-paper/40 text-paper",
   };
   return (
-    <span className={`eyebrow inline-block rounded px-2 py-1 ${styles[status]}`}>
+    <span
+      className={`eyebrow inline-block rounded px-2 py-1 ${styles[status]}`}
+    >
       {status}
     </span>
   );
@@ -46,7 +49,9 @@ function StatBlock({
 
 function EndpointRow({ e }: { e: EndpointState }) {
   const rate =
-    e.probes_7d > 0 ? `${Math.round((e.ok_7d / e.probes_7d) * 100)}%` : "no data";
+    e.probes_7d > 0
+      ? `${Math.round((e.ok_7d / e.probes_7d) * 100)}%`
+      : "no data";
   // A 401, 402, or 403 means the endpoint is answering and asking for
   // payment or a key, which is a working agent, not a dead one.
   const verdict =
@@ -89,9 +94,9 @@ const FLAG_COPY: Record<string, string> = {
 
 function ReviewerRow({ r }: { r: Review }) {
   const weight = r.weight ? parseFloat(r.weight) : null;
-  const scaled = (
-    parseFloat(r.value) / Math.pow(10, r.value_decimals)
-  ).toFixed(0);
+  const scaled = (parseFloat(r.value) / Math.pow(10, r.value_decimals)).toFixed(
+    0,
+  );
   return (
     <li className="border-t border-dormant/30 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -264,9 +269,7 @@ export default async function AgentDetail({
 
       <div className="mx-auto max-w-[1200px] px-8 py-10">
         <section aria-label="Uptime history">
-          <p className="eyebrow text-dormant">
-            PROBE HISTORY, 7 DAYS BY HOUR
-          </p>
+          <p className="eyebrow text-dormant">PROBE HISTORY, 7 DAYS BY HOUR</p>
           <div className="mt-3">
             <ProbeStrip
               buckets={uptime?.buckets ?? []}
@@ -278,7 +281,10 @@ export default async function AgentDetail({
           </p>
         </section>
 
-        <section aria-label="Scores" className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <section
+          aria-label="Scores"
+          className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3"
+        >
           <StatBlock
             label="LIVENESS"
             value={liveness}
@@ -304,13 +310,19 @@ export default async function AgentDetail({
           />
         </section>
 
+        <section aria-label="Verify" className="mt-6">
+          <VerifyDrawer agentId={agent.agent_id} />
+        </section>
+
         <section aria-label="Reviews" className="mt-10">
           <p className="eyebrow text-dormant">REVIEWS</p>
           <div className="mt-3">
             {reviews ? (
               <ReviewsPanel reviews={reviews} />
             ) : (
-              <p className="text-sm text-ink/70">Reviews could not be loaded.</p>
+              <p className="text-sm text-ink/70">
+                Reviews could not be loaded.
+              </p>
             )}
           </div>
         </section>
