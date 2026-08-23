@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import {IACPHook} from "../../src/interfaces/IACPHook.sol";
 import {IAgenticCommerce} from "../../src/interfaces/IAgenticCommerce.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// Local stand ins for the live ERC-8183 stack, matching the real ABI and
 /// the real access rules so unit tests and the local dev chain behave the
@@ -38,6 +40,8 @@ contract MockKernel {
     error NotProvider();
     error NotEvaluator();
     error WrongStatus();
+    error HookRequired();
+    error HookMissingInterface();
 
     constructor(MockUSD usd_) {
         usd = usd_;
@@ -51,6 +55,12 @@ contract MockKernel {
         external
         returns (uint256 jobId)
     {
+        // The live kernel refuses a job without a hook that advertises
+        // IACPHook over ERC-165. Mirrored here so unit tests catch it too.
+        if (hook == address(0)) revert HookRequired();
+        if (!IERC165(hook).supportsInterface(type(IACPHook).interfaceId)) {
+            revert HookMissingInterface();
+        }
         jobId = ++jobCounter;
         J storage j = jobsById[jobId];
         j.client = msg.sender;
@@ -158,7 +168,7 @@ contract MockPolicy {
     }
 }
 
-contract MockRouter {
+contract MockRouter is IACPHook {
     MockKernel public immutable kernel;
     MockPolicy public immutable policy;
     mapping(uint256 => address) public jobPolicy;
@@ -202,5 +212,17 @@ contract MockRouter {
 
     function markExpired(uint256 jobId) external {
         kernel.markExpiredBy(jobId);
+    }
+
+    // The live router is itself an IACPHook, and refuses to let a job it
+    // does not evaluate be funded.
+    function beforeAction(uint256 jobId, bytes4, bytes calldata) external view override {
+        if (jobPolicy[jobId] == address(0)) revert PolicyNotSet();
+    }
+
+    function afterAction(uint256, bytes4, bytes calldata) external override {}
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IACPHook).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

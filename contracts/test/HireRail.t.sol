@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {HireRail} from "../src/HireRail.sol";
+import {TrustListHook} from "../src/TrustListHook.sol";
 import {IAgenticCommerce} from "../src/interfaces/IAgenticCommerce.sol";
 import {MockKernel, MockPolicy, MockRouter, MockUSD} from "./mocks/Mocks.sol";
 
@@ -11,9 +12,11 @@ contract HireRailTest is Test {
     MockKernel kernel;
     MockPolicy policyContract;
     MockRouter router;
+    TrustListHook hook;
     HireRail rail;
 
     uint64 constant DISPUTE_WINDOW = 1 hours;
+    uint64 constant TTL = 3 days;
 
     address hirer = makeAddr("hirer");
     address provider = makeAddr("provider");
@@ -26,151 +29,258 @@ contract HireRailTest is Test {
         policyContract = new MockPolicy(DISPUTE_WINDOW);
         policy = address(policyContract);
         router = new MockRouter(kernel, policyContract);
-        rail = new HireRail(address(kernel), address(router), policy);
+        hook = new TrustListHook();
+        rail = new HireRail(address(kernel), address(router), policy, address(hook));
         usd.mint(hirer, 1_000e18);
     }
 
-    function hireOnce(uint256 budget) internal returns (uint256 jobId) {
+    function hireIn(HireRail.Mode mode, uint256 budget) internal returns (uint256 jobId) {
         vm.startPrank(hirer);
         usd.approve(address(rail), budget);
-        jobId = rail.hire(7, provider, budget, uint64(block.timestamp + 1 days), keccak256("spec"), "do the thing");
+        jobId = rail.hire(7, provider, budget, uint64(block.timestamp + TTL), keccak256("spec"), "do the thing", mode);
         vm.stopPrank();
     }
 
-    function test_hire_opens_binds_budgets_and_funds_in_one_tx() public {
-        uint256 jobId = hireOnce(5e18);
+    function deliver(uint256 jobId) internal {
+        vm.prank(provider);
+        kernel.submit(jobId, keccak256("deliverable"), "");
+    }
+
+    // ---------------------------------------------------------------
+    // Opening and funding
+    // ---------------------------------------------------------------
+
+    function test_protected_hire_uses_the_router_as_evaluator_and_hook() public {
+        uint256 jobId = hireIn(HireRail.Mode.Protected, 5e18);
         IAgenticCommerce.Job memory job = kernel.getJob(jobId);
         assertEq(uint8(job.status), uint8(IAgenticCommerce.JobStatus.Funded));
-        assertEq(job.budget, 5e18);
-        assertEq(job.provider, provider);
-        // The router must be both evaluator and hook or the real kernel path
-        // reverts; assert we always satisfy that.
-        assertEq(job.evaluator, address(router));
-        assertEq(job.hook, address(router));
-        // The dispute policy is bound, so settle can decide later.
-        assertEq(router.jobPolicy(jobId), policy);
-        assertEq(rail.hirerOf(jobId), hirer);
-        assertEq(rail.agentOf(jobId), 7);
+        assertEq(job.evaluator, address(router), "router evaluates");
+        assertEq(job.hook, address(router), "router hooks");
+        assertEq(router.jobPolicy(jobId), policy, "policy bound");
         assertEq(usd.balanceOf(address(rail)), 0);
         assertEq(usd.balanceOf(hirer), 995e18);
     }
 
-    function test_hire_reverts_when_deadline_in_past() public {
+    function test_direct_hire_makes_the_rail_the_evaluator_with_its_own_hook() public {
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
+        IAgenticCommerce.Job memory job = kernel.getJob(jobId);
+        assertEq(uint8(job.status), uint8(IAgenticCommerce.JobStatus.Funded));
+        assertEq(job.evaluator, address(rail), "rail evaluates");
+        assertEq(job.hook, address(hook), "our own hook");
+        // Direct jobs are deliberately not registered with the router.
+        assertEq(router.jobPolicy(jobId), address(0), "no policy bound");
+        assertEq(uint8(rail.modeOf(jobId)), uint8(HireRail.Mode.Direct));
+    }
+
+    function test_hire_reverts_when_the_deadline_is_too_soon() public {
         vm.startPrank(hirer);
         usd.approve(address(rail), 1e18);
-        vm.expectRevert(HireRail.DeadlineInPast.selector);
-        rail.hire(1, provider, 1e18, uint64(block.timestamp), keccak256("s"), "d");
+        vm.expectRevert(HireRail.DeadlineTooSoon.selector);
+        rail.hire(1, provider, 1e18, uint64(block.timestamp + 60), keccak256("s"), "d", HireRail.Mode.Direct);
         vm.stopPrank();
     }
 
-    function test_hire_reverts_when_allowance_short() public {
+    function test_hire_reverts_on_short_allowance_zero_budget_and_zero_provider() public {
         vm.startPrank(hirer);
         usd.approve(address(rail), 1e18 - 1);
         vm.expectRevert();
-        rail.hire(1, provider, 1e18, uint64(block.timestamp + 1), keccak256("s"), "d");
+        rail.hire(1, provider, 1e18, uint64(block.timestamp + TTL), keccak256("s"), "d", HireRail.Mode.Direct);
+        vm.expectRevert(HireRail.ZeroBudget.selector);
+        rail.hire(1, provider, 0, uint64(block.timestamp + TTL), keccak256("s"), "d", HireRail.Mode.Direct);
+        vm.expectRevert(HireRail.ZeroProvider.selector);
+        rail.hire(1, address(0), 1e18, uint64(block.timestamp + TTL), keccak256("s"), "d", HireRail.Mode.Direct);
         vm.stopPrank();
     }
 
-    function test_hire_reverts_when_paused() public {
+    function test_hire_reverts_when_paused_but_escrow_never_gets_trapped() public {
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
         rail.pause();
         vm.startPrank(hirer);
         usd.approve(address(rail), 1e18);
         vm.expectRevert();
-        rail.hire(1, provider, 1e18, uint64(block.timestamp + 1), keccak256("s"), "d");
+        rail.hire(1, provider, 1e18, uint64(block.timestamp + TTL), keccak256("s"), "d", HireRail.Mode.Direct);
         vm.stopPrank();
+        // Accepting and reclaiming stay open while paused.
+        deliver(jobId);
+        vm.prank(hirer);
+        rail.accept(jobId);
+        assertEq(usd.balanceOf(provider), 5e18);
     }
 
-    function test_hire_reverts_on_zero_budget_and_zero_provider() public {
-        vm.startPrank(hirer);
-        vm.expectRevert(HireRail.ZeroBudget.selector);
-        rail.hire(1, provider, 0, uint64(block.timestamp + 1), keccak256("s"), "d");
-        vm.expectRevert(HireRail.ZeroProvider.selector);
-        rail.hire(1, address(0), 1e18, uint64(block.timestamp + 1), keccak256("s"), "d");
-        vm.stopPrank();
+    // ---------------------------------------------------------------
+    // Direct mode: the rail is the evaluator, the hirer holds the authority
+    // ---------------------------------------------------------------
+
+    function test_accept_pays_the_provider_in_the_same_call() public {
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
+        deliver(jobId);
+        vm.prank(hirer);
+        rail.accept(jobId);
+        assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Completed));
+        assertEq(usd.balanceOf(provider), 5e18, "provider paid in full");
+        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing");
     }
+
+    /// The whole trust claim of Direct mode is this test: being the
+    /// evaluator gives this contract the power to release escrow, and the
+    /// only code path that uses it demands the hirer.
+    function test_nobody_but_the_hirer_can_release_a_direct_escrow() public {
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
+        deliver(jobId);
+
+        // The contract owner is not privileged here.
+        vm.expectRevert(HireRail.NotHirer.selector);
+        rail.accept(jobId);
+
+        vm.prank(stranger);
+        vm.expectRevert(HireRail.NotHirer.selector);
+        rail.accept(jobId);
+
+        // Not even the agent being paid can trigger its own payout.
+        vm.prank(provider);
+        vm.expectRevert(HireRail.NotHirer.selector);
+        rail.accept(jobId);
+
+        // And calling the kernel directly does not work either, because the
+        // kernel only listens to the evaluator, which is this contract.
+        vm.prank(provider);
+        vm.expectRevert();
+        kernel.complete(jobId, bytes32(0), "");
+
+        assertEq(usd.balanceOf(provider), 0, "escrow untouched");
+    }
+
+    function test_rejectWork_returns_the_escrow_to_the_hirer() public {
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
+        deliver(jobId);
+        vm.prank(hirer);
+        rail.rejectWork(jobId);
+        assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Rejected));
+        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole");
+        assertEq(usd.balanceOf(provider), 0, "provider paid nothing");
+        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing");
+    }
+
+    function test_only_the_hirer_can_reject_work() public {
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
+        deliver(jobId);
+        vm.prank(stranger);
+        vm.expectRevert(HireRail.NotHirer.selector);
+        rail.rejectWork(jobId);
+    }
+
+    function test_accept_and_reject_reject_unknown_jobs_and_wrong_mode() public {
+        vm.expectRevert(HireRail.UnknownJob.selector);
+        rail.accept(999);
+        vm.expectRevert(HireRail.UnknownJob.selector);
+        rail.rejectWork(999);
+
+        uint256 protectedJob = hireIn(HireRail.Mode.Protected, 5e18);
+        deliver(protectedJob);
+        vm.prank(hirer);
+        vm.expectRevert(HireRail.WrongMode.selector);
+        rail.accept(protectedJob);
+        vm.prank(hirer);
+        vm.expectRevert(HireRail.WrongMode.selector);
+        rail.rejectWork(protectedJob);
+    }
+
+    // ---------------------------------------------------------------
+    // Protected mode: nobody decides unilaterally
+    // ---------------------------------------------------------------
 
     function test_settle_completes_the_job_and_pays_the_provider() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.prank(provider);
-        kernel.submit(jobId, keccak256("deliverable"), "");
-        assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Submitted));
-
-        // Silence past the dispute window is approval.
+        uint256 jobId = hireIn(HireRail.Mode.Protected, 5e18);
+        deliver(jobId);
         vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
         // Permissionless: a stranger can push the payout through.
         vm.prank(stranger);
         rail.settle(jobId, "");
-
         assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Completed));
-        assertEq(usd.balanceOf(provider), 5e18, "provider paid from escrow");
-        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing");
+        assertEq(usd.balanceOf(provider), 5e18);
     }
 
     function test_disputed_job_settles_back_to_the_hirer() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.prank(provider);
-        kernel.submit(jobId, keccak256("junk"), "");
+        uint256 jobId = hireIn(HireRail.Mode.Protected, 5e18);
+        deliver(jobId);
         policyContract.dispute(jobId);
         vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
         rail.settle(jobId, "");
         assertEq(uint8(kernel.getJob(jobId).status), uint8(IAgenticCommerce.JobStatus.Rejected));
-        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole on rejection");
-        assertEq(usd.balanceOf(provider), 0, "provider paid nothing");
+        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole in one step");
+        assertEq(usd.balanceOf(address(rail)), 0);
+        assertTrue(rail.refundForwarded(jobId));
     }
 
-    function test_settle_reverts_before_the_dispute_window_closes() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.prank(provider);
-        kernel.submit(jobId, keccak256("d"), "");
+    function test_settle_reverts_before_the_window_closes_and_for_direct_jobs() public {
+        uint256 jobId = hireIn(HireRail.Mode.Protected, 5e18);
+        deliver(jobId);
         vm.expectRevert();
         rail.settle(jobId, "");
-    }
 
-    function test_settle_reverts_for_unknown_job() public {
+        uint256 directJob = hireIn(HireRail.Mode.Direct, 5e18);
+        vm.expectRevert(HireRail.WrongMode.selector);
+        rail.settle(directJob, "");
+
         vm.expectRevert(HireRail.UnknownJob.selector);
         rail.settle(999, "");
     }
 
+    // ---------------------------------------------------------------
+    // Expiry and stranded refunds
+    // ---------------------------------------------------------------
+
     function test_reclaim_refunds_the_hirer_after_expiry() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.warp(block.timestamp + 2 days);
-        // Permissionless: a stranger triggers it, funds go to the hirer.
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
+        vm.warp(block.timestamp + TTL + 1);
         vm.prank(stranger);
         rail.reclaim(jobId);
         assertEq(usd.balanceOf(hirer), 1_000e18);
         assertEq(usd.balanceOf(address(rail)), 0);
+        assertEq(usd.balanceOf(stranger), 0, "caller gains nothing");
     }
 
-    function test_reclaim_reverts_for_unknown_job() public {
+    function test_reclaim_rejects_unknown_early_and_repeat_calls() public {
         vm.expectRevert(HireRail.UnknownJob.selector);
         rail.reclaim(999);
-    }
 
-    function test_reclaim_reverts_before_expiry() public {
-        uint256 jobId = hireOnce(5e18);
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
         vm.expectRevert();
         rail.reclaim(jobId);
-    }
 
-    function test_reclaim_twice_reverts() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(block.timestamp + TTL + 1);
         rail.reclaim(jobId);
         vm.expectRevert();
         rail.reclaim(jobId);
     }
 
-    /// Any valid hire leaves the rail holding nothing and the escrow exact.
-    function testFuzz_rail_balance_always_zero(uint96 budget, uint32 ttl) public {
-        budget = uint96(bound(budget, 1, 1_000e18));
-        ttl = uint32(bound(ttl, 1, 365 days));
-        vm.startPrank(hirer);
-        usd.approve(address(rail), budget);
-        rail.hire(3, provider, budget, uint64(block.timestamp + ttl), keccak256("z"), "fuzz");
-        vm.stopPrank();
-        assertEq(usd.balanceOf(address(rail)), 0);
-        assertEq(usd.balanceOf(address(kernel)), budget);
-        assertEq(usd.allowance(address(rail), address(kernel)), 0);
+    function test_forwardRefund_rescues_a_rejection_settled_outside_the_rail() public {
+        uint256 jobId = hireIn(HireRail.Mode.Protected, 5e18);
+        deliver(jobId);
+        policyContract.dispute(jobId);
+        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+
+        // Settled straight on the router, bypassing our rail. The kernel
+        // refunds its client, which is the rail, so it lands here.
+        router.settle(jobId, "");
+        assertEq(usd.balanceOf(address(rail)), 5e18, "stranded on the rail");
+
+        vm.prank(stranger);
+        rail.forwardRefund(jobId);
+        assertEq(usd.balanceOf(hirer), 1_000e18, "pushed to the hirer");
+        assertEq(usd.balanceOf(address(rail)), 0, "rail empty");
+        assertEq(usd.balanceOf(stranger), 0, "caller gains nothing");
+
+        vm.expectRevert(HireRail.NothingToRefund.selector);
+        rail.forwardRefund(jobId);
+    }
+
+    function test_forwardRefund_rejects_unknown_and_unfinished_jobs() public {
+        vm.expectRevert(HireRail.UnknownJob.selector);
+        rail.forwardRefund(999);
+        uint256 jobId = hireIn(HireRail.Mode.Direct, 5e18);
+        vm.expectRevert(HireRail.JobNotRefundable.selector);
+        rail.forwardRefund(jobId);
     }
 
     function test_pause_and_unpause_are_owner_only() public {
@@ -184,92 +294,59 @@ contract HireRailTest is Test {
         rail.unpause();
     }
 
-    function test_pausing_does_not_trap_an_existing_job() public {
-        uint256 jobId = hireOnce(5e18);
-        rail.pause();
-        vm.warp(block.timestamp + 2 days);
-        rail.reclaim(jobId);
-        assertEq(usd.balanceOf(hirer), 1_000e18);
-    }
+    // ---------------------------------------------------------------
+    // Invariants
+    // ---------------------------------------------------------------
 
-    function test_forwardRefund_rescues_a_rejection_settled_outside_the_rail() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.prank(provider);
-        kernel.submit(jobId, keccak256("junk"), "");
-        policyContract.dispute(jobId);
-        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
-
-        // Someone settles straight on the router, bypassing our rail. The
-        // kernel refunds its client, which is the rail, so the money lands
-        // here instead of with the person who paid.
-        router.settle(jobId, "");
-        assertEq(usd.balanceOf(address(rail)), 5e18, "escrow stranded on the rail");
-        assertEq(usd.balanceOf(hirer), 995e18, "hirer not yet made whole");
-
-        // Anyone may push it to the hirer, and only to the hirer.
-        vm.prank(stranger);
-        rail.forwardRefund(jobId);
-        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole");
-        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing at rest");
-        assertEq(usd.balanceOf(stranger), 0, "caller gains nothing");
-    }
-
-    function test_forwardRefund_cannot_run_twice() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.prank(provider);
-        kernel.submit(jobId, keccak256("junk"), "");
-        policyContract.dispute(jobId);
-        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
-        router.settle(jobId, "");
-        rail.forwardRefund(jobId);
-        vm.expectRevert(HireRail.NothingToRefund.selector);
-        rail.forwardRefund(jobId);
-    }
-
-    function test_forwardRefund_rejects_unknown_and_unfinished_jobs() public {
-        vm.expectRevert(HireRail.UnknownJob.selector);
-        rail.forwardRefund(999);
-
-        uint256 jobId = hireOnce(5e18);
-        // Still funded, so there is nothing to refund and no right to take.
-        vm.expectRevert(HireRail.JobNotRefundable.selector);
-        rail.forwardRefund(jobId);
-    }
-
-    function test_settle_after_rejection_returns_escrow_to_the_hirer() public {
-        uint256 jobId = hireOnce(5e18);
-        vm.prank(provider);
-        kernel.submit(jobId, keccak256("junk"), "");
-        policyContract.dispute(jobId);
-        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
-        // Through our rail this happens in one transaction, no rescue needed.
-        rail.settle(jobId, "");
-        assertEq(usd.balanceOf(hirer), 1_000e18, "hirer made whole in one step");
-        assertEq(usd.balanceOf(address(rail)), 0, "rail holds nothing");
-        assertTrue(rail.refundForwarded(jobId), "marked as forwarded");
-    }
-
-    /// The rail is a conduit, never a vault: whatever sequence runs, it must
-    /// not be holding tokens once the transaction ends.
-    function testFuzz_rail_never_holds_funds_at_rest(uint96 budget, bool disputeIt) public {
+    /// The rail is a conduit, never a vault.
+    function testFuzz_rail_never_holds_funds_at_rest(uint96 budget, uint8 pathPick) public {
         budget = uint96(bound(budget, 1, 1_000e18));
+        uint8 path = pathPick % 4;
+
+        HireRail.Mode mode = path < 2 ? HireRail.Mode.Direct : HireRail.Mode.Protected;
         vm.startPrank(hirer);
         usd.approve(address(rail), budget);
-        uint256 jobId =
-            rail.hire(1, provider, budget, uint64(block.timestamp + 1 days), keccak256("f"), "fuzz");
+        uint256 jobId = rail.hire(1, provider, budget, uint64(block.timestamp + TTL), keccak256("f"), "fuzz", mode);
         vm.stopPrank();
+        deliver(jobId);
 
-        vm.prank(provider);
-        kernel.submit(jobId, keccak256("d"), "");
-        if (disputeIt) policyContract.dispute(jobId);
-        vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
-        rail.settle(jobId, "");
+        if (path == 0) {
+            vm.prank(hirer);
+            rail.accept(jobId);
+            assertEq(usd.balanceOf(provider), budget, "provider paid in full");
+        } else if (path == 1) {
+            vm.prank(hirer);
+            rail.rejectWork(jobId);
+            assertEq(usd.balanceOf(hirer), 1_000e18, "refunded in full");
+        } else if (path == 2) {
+            vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+            rail.settle(jobId, "");
+            assertEq(usd.balanceOf(provider), budget, "provider paid in full");
+        } else {
+            policyContract.dispute(jobId);
+            vm.warp(block.timestamp + DISPUTE_WINDOW + 1);
+            rail.settle(jobId, "");
+            assertEq(usd.balanceOf(hirer), 1_000e18, "refunded in full");
+        }
 
         assertEq(usd.balanceOf(address(rail)), 0, "rail empty");
-        if (disputeIt) {
-            assertEq(usd.balanceOf(hirer), 1_000e18, "refunded in full");
-        } else {
-            assertEq(usd.balanceOf(provider), budget, "provider paid in full");
-        }
+        assertEq(usd.allowance(address(rail), address(kernel)), 0, "no standing approval");
+    }
+
+    function test_protected_hire_refuses_a_deadline_inside_the_dispute_window() public {
+        // The mock policy uses a one hour window, so a thirty minute job
+        // could never settle: it would expire first.
+        vm.startPrank(hirer);
+        usd.approve(address(rail), 1e18);
+        vm.expectRevert(HireRail.DeadlineTooSoon.selector);
+        rail.hire(1, provider, 1e18, uint64(block.timestamp + 30 minutes), keccak256("s"), "d", HireRail.Mode.Protected);
+        // The same deadline is fine for a direct job, which settles on
+        // acceptance rather than on a timer.
+        rail.hire(1, provider, 1e18, uint64(block.timestamp + 30 minutes), keccak256("s"), "d", HireRail.Mode.Direct);
+        vm.stopPrank();
+    }
+
+    function test_rail_reports_the_window_it_is_bound_to() public view {
+        assertEq(rail.disputeWindow(), DISPUTE_WINDOW, "window read from the policy at deploy");
     }
 }

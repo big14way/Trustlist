@@ -41,6 +41,12 @@ interface IAgenticCommerce {
 
     function fund(uint256 jobId, uint256 expectedBudget, bytes calldata optParams) external;
 
+    function submit(uint256 jobId, bytes32 deliverable, bytes calldata optParams) external;
+
+    function complete(uint256 jobId, bytes32 reason, bytes calldata optParams) external;
+
+    function reject(uint256 jobId, bytes32 reason, bytes calldata optParams) external;
+
     function claimRefund(uint256 jobId) external;
 
     function getJob(uint256 jobId) external view returns (Job memory);

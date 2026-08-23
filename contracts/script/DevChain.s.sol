@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Script, console} from "forge-std/Script.sol";
 import {HireRail} from "../src/HireRail.sol";
+import {TrustListHook} from "../src/TrustListHook.sol";
 import {MockKernel, MockPolicy, MockRouter, MockUSD} from "../test/mocks/Mocks.sol";
 
 /// Stands up a complete local hire stack on a plain anvil node for UI
@@ -27,7 +28,8 @@ contract DevChain is Script {
         uint64 devDisputeWindow = uint64(vm.envOr("DEV_DISPUTE_WINDOW", uint256(60)));
         MockPolicy policy = new MockPolicy(devDisputeWindow);
         MockRouter router = new MockRouter(kernel, policy);
-        HireRail rail = new HireRail(address(kernel), address(router), address(policy));
+        TrustListHook hook = new TrustListHook();
+        HireRail rail = new HireRail(address(kernel), address(router), address(policy), address(hook));
 
         // Fund the standard anvil accounts so any of them can hire.
         usd.mint(deployer, 10_000e18);
@@ -41,5 +43,6 @@ contract DevChain is Script {
         console.log("DEV_POLICY=%s", address(policy));
         console.log("DEV_DISPUTE_WINDOW=%s", devDisputeWindow);
         console.log("DEV_HIRE_RAIL=%s", address(rail));
+        console.log("DEV_HOOK=%s", address(hook));
     }
 }

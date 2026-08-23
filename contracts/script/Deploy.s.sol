@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Script, console} from "forge-std/Script.sol";
 import {HireRail} from "../src/HireRail.sol";
+import {TrustListHook} from "../src/TrustListHook.sol";
 
 /// Deploys HireRail against the canonical ERC-8183 stack, picking addresses
 /// by chain id. Addresses come from the BNBAgent SDK deployment manifest and
@@ -31,10 +32,12 @@ contract Deploy is Script {
         (address kernel, address router, address policy) = addresses();
         uint256 key = vm.envUint("DEPLOYER_KEY");
         vm.startBroadcast(key);
-        HireRail rail = new HireRail(kernel, router, policy);
+        TrustListHook hook = new TrustListHook();
+        HireRail rail = new HireRail(kernel, router, policy, address(hook));
         vm.stopBroadcast();
         console.log("chain id     ", block.chainid);
         console.log("HireRail     ", address(rail));
+        console.log("TrustListHook", address(hook));
         console.log("kernel       ", kernel);
         console.log("router       ", router);
         console.log("policy       ", policy);
