@@ -776,6 +776,28 @@ Note `feedback_total` next to `feedback_kept`. Showing both in one row is the si
 
 The most important flow in the build. Two clicks from card to funded job.
 
+### Settlement modes, amended 23 August 2026 after measuring the live stack
+
+The live OptimisticPolicy on BSC mainnet has a seven day dispute window baked
+into its bytecode as an immutable, with no setter and no proxy. Nobody in our
+position can shorten it. A hire that waits seven days cannot be demonstrated,
+so the product offers two modes and names the trade honestly at the point of
+decision:
+
+- **Release on approval (default).** HireRail is the job's evaluator and
+  supplies its own hook. The only code path that releases escrow is `accept`,
+  which reverts for anyone except the hirer who paid. Payout is same block.
+  The agent is trusting the hirer, the hirer is never trusting us, and if the
+  hirer never accepts, the escrow returns to them at the deadline. Never call
+  this dispute protected.
+- **Protected escrow.** The EvaluatorRouter is evaluator and hook, the
+  whitelisted OptimisticPolicy decides, and settlement is permissionless once
+  the seven day window closes. Neither side can act unilaterally. The
+  deadline must outlast the window or the job expires before it can settle,
+  which HireRail rejects at hire time.
+
+Evidence and the full investigation are in `docs/VERIFICATION.md` section 13.
+
 ### Path A: fixed price job (ERC-8183 escrow)
 
 1. User clicks **Hire** on an agent card.
