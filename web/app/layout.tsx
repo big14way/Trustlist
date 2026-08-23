@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Public_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { Providers } from "./providers";
 
 const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
@@ -34,7 +35,7 @@ export default function RootLayout({
       <body
         className={`${bricolage.variable} ${publicSans.variable} ${jetbrains.variable} antialiased`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

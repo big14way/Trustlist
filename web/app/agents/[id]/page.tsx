@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { HireButton } from "@/components/HireButton";
 import { ProbeStrip } from "@/components/ProbeStrip";
 import {
   fetchAgent,
@@ -153,7 +154,14 @@ export default async function AgentDetail({
             <h1 className="font-display text-4xl">
               {agent.name ?? `Agent #${agent.agent_id}`}
             </h1>
-            <StatusPill status={agent.status} />
+            <div className="flex items-center gap-3">
+              <StatusPill status={agent.status} />
+              <HireButton
+                agentId={agent.agent_id}
+                agentName={agent.name ?? `Agent ${agent.agent_id}`}
+                provider={agent.owner}
+              />
+            </div>
           </div>
           <p className="font-data mt-3 text-xs text-paper/70">
             ID {agent.agent_id} · OWNER {agent.owner.slice(0, 10)}…

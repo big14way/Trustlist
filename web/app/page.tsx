@@ -1,4 +1,5 @@
 import { CollapseCounter } from "@/components/CollapseCounter";
+import { HireButton } from "@/components/HireButton";
 import { ProbeStrip } from "@/components/ProbeStrip";
 import {
   fetchAgents,
@@ -56,10 +57,18 @@ function Card({ agent, uptime }: { agent: AgentCard; uptime: UptimeMap }) {
           label={agent.name ?? `Agent ${agent.agent_id}`}
         />
       </div>
-      <p className="font-data mt-2 text-xs text-ink/70">
-        UPTIME {uptimePct} · PROBES {agent.probes_7d ?? 0} · REVIEWS{" "}
-        {agent.feedback_total} · {date}
-      </p>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <p className="font-data text-xs text-ink/70">
+          UPTIME {uptimePct} · PROBES {agent.probes_7d ?? 0} · REVIEWS{" "}
+          {agent.feedback_total} · {date}
+        </p>
+        <HireButton
+          agentId={agent.agent_id}
+          agentName={agent.name ?? `Agent ${agent.agent_id}`}
+          provider={agent.owner}
+          variant="compact"
+        />
+      </div>
     </li>
   );
 }
