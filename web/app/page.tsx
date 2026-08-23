@@ -1,13 +1,8 @@
 import { CollapseCounter } from "@/components/CollapseCounter";
 import { HireButton } from "@/components/HireButton";
 import { ProbeStrip } from "@/components/ProbeStrip";
-import {
-  fetchAgents,
-  fetchStats,
-  fetchUptime,
-  type AgentCard,
-  type UptimeMap,
-} from "@/lib/api";
+import { fetchAgents, fetchStats, fetchUptime } from "@/lib/api-server";
+import type { AgentCard, UptimeMap } from "@/lib/api";
 
 // Data comes from our indexer and prober at request time; never prerender
 // stale counts.
@@ -83,7 +78,8 @@ export default async function Home() {
   const uptime =
     (await fetchUptime(agents?.items.map((a) => a.agent_id) ?? [])) ?? {};
 
-  const answering = stats ? stats.live + stats.flaky : 0;
+  const measured = stats?.measured === true;
+  const answering = measured && stats ? stats.live + stats.flaky : 0;
 
   return (
     <main className="mx-auto max-w-[1200px] px-8 py-16">
@@ -92,7 +88,7 @@ export default async function Home() {
         Most agents are not there.
       </h1>
 
-      {stats ? (
+      {stats && measured ? (
         answering > 0 ? (
           <p className="mt-4 max-w-2xl text-base">
             <CollapseCounter
@@ -117,6 +113,12 @@ export default async function Home() {
             fairly; until then nothing here claims to be alive.
           </p>
         )
+      ) : stats ? (
+        <p className="mt-4 max-w-2xl text-base">
+          The prober has not completed its first scoring pass, so we have
+          nothing measured to report yet. We would rather say that than show
+          you a zero and call it a finding.
+        </p>
       ) : (
         <p className="mt-4 max-w-2xl text-base text-flag">
           The API is not reachable. Counts and agents cannot be shown, and we
@@ -124,12 +126,14 @@ export default async function Home() {
         </p>
       )}
 
-      {stats?.indexed_to_block ? (
+      {stats && measured && stats.indexed_to_block ? (
         <p className="font-data mt-2 text-xs text-dormant">
-          indexed to block {stats.indexed_to_block.toLocaleString()}
-          {stats.indexed_at ? ` at ${stats.indexed_at.slice(0, 19)}Z` : ""} ·
-          live {stats.live} · flaky {stats.flaky} · down {stats.down} ·
-          measuring {stats.measuring}
+          indexed to block {stats.indexed_to_block.toLocaleString()} · live{" "}
+          {stats.live} · flaky {stats.flaky} · down {stats.down} · measuring{" "}
+          {stats.measuring}
+          {stats.computed_at
+            ? ` · scored ${stats.computed_at.slice(0, 16).replace("T", " ")}Z`
+            : ""}
         </p>
       ) : null}
 

@@ -1,5 +1,8 @@
 // Typed API client. The web app talks only to our API, never to an agent
 // endpoint directly.
+//
+// This module is safe to import from client components. Server components
+// should use lib/api-server.ts instead, which snapshots each request.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -34,6 +37,10 @@ export type AgentList = {
 };
 
 export type Stats = {
+  /// False before the first scoring pass, when we genuinely have nothing
+  /// measured yet and the page must say so rather than print zeroes.
+  measured: boolean;
+  computed_at?: string;
   registered: number;
   cards_ok: number;
   with_endpoints: number;
@@ -54,11 +61,9 @@ export type UptimeMap = Record<
   { hour: string; ok_share: number | null; probes: number }[]
 >;
 
-async function get<T>(path: string): Promise<T | null> {
+export async function apiGet<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${API_URL}${path}`, {
-      next: { revalidate: 30 },
-    });
+    const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch (e) {
@@ -68,17 +73,17 @@ async function get<T>(path: string): Promise<T | null> {
 }
 
 export function fetchStats(): Promise<Stats | null> {
-  return get<Stats>("/v1/stats");
+  return apiGet<Stats>("/v1/stats");
 }
 
 export function fetchAgents(params: URLSearchParams): Promise<AgentList | null> {
   const qs = params.toString();
-  return get<AgentList>(`/v1/agents${qs ? `?${qs}` : ""}`);
+  return apiGet<AgentList>(`/v1/agents${qs ? `?${qs}` : ""}`);
 }
 
 export function fetchUptime(ids: string[]): Promise<UptimeMap | null> {
   if (ids.length === 0) return Promise.resolve({});
-  return get<UptimeMap>(`/v1/uptime?ids=${ids.join(",")}`);
+  return apiGet<UptimeMap>(`/v1/uptime?ids=${ids.join(",")}`);
 }
 
 export type EndpointState = {
@@ -122,21 +127,21 @@ export type UptimeBuckets = {
 };
 
 export function fetchAgent(id: string): Promise<AgentCard | null> {
-  return get<AgentCard>(`/v1/agents/${encodeURIComponent(id)}`);
+  return apiGet<AgentCard>(`/v1/agents/${encodeURIComponent(id)}`);
 }
 
 export function fetchAgentUptime(id: string): Promise<UptimeBuckets | null> {
-  return get<UptimeBuckets>(`/v1/agents/${encodeURIComponent(id)}/uptime`);
+  return apiGet<UptimeBuckets>(`/v1/agents/${encodeURIComponent(id)}/uptime`);
 }
 
 export function fetchAgentReviews(id: string): Promise<Reviews | null> {
-  return get<Reviews>(`/v1/agents/${encodeURIComponent(id)}/reviews`);
+  return apiGet<Reviews>(`/v1/agents/${encodeURIComponent(id)}/reviews`);
 }
 
 export function fetchAgentEndpoints(
   id: string,
 ): Promise<{ agent_id: string; items: EndpointState[] } | null> {
-  return get<{ agent_id: string; items: EndpointState[] }>(
+  return apiGet<{ agent_id: string; items: EndpointState[] }>(
     `/v1/agents/${encodeURIComponent(id)}/endpoints`,
   );
 }
@@ -164,5 +169,5 @@ export type Job = {
 
 export function fetchJobs(hirer?: string): Promise<{ items: Job[] } | null> {
   const qs = hirer ? `?hirer=${encodeURIComponent(hirer)}` : "";
-  return get<{ items: Job[] }>(`/v1/jobs${qs}`);
+  return apiGet<{ items: Job[] }>(`/v1/jobs${qs}`);
 }

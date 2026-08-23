@@ -77,6 +77,46 @@ left join lateral (
   where fb.agent_id = s.agent_id and not fb.revoked
 ) f on true";
 
+/// Refresh the registry snapshot the marketplace header reads. Run right
+/// after scoring, when the numbers have just changed.
+const STATS_SQL: &str = "
+with latest as (
+  select distinct on (agent_id) agent_id, status
+  from agent_scores order by agent_id, computed_at desc
+)
+insert into registry_stats (
+  id, registered, cards_fetched, cards_ok, with_endpoints, feedback,
+  reviewers, live, flaky, down, measuring, probes_total, computed_at
+)
+select 1,
+  (select count(*) from agents),
+  (select count(*) from agents where card_fetched_at is not null),
+  (select count(*) from agents where card_status = 'ok'),
+  (select count(*) from agents
+    where endpoints is not null and jsonb_array_length(endpoints) > 0),
+  (select count(*) from feedback where not revoked),
+  (select count(distinct reviewer) from feedback),
+  count(*) filter (where status = 'live'),
+  count(*) filter (where status = 'flaky'),
+  count(*) filter (where status = 'down'),
+  count(*) filter (where status = 'measuring'),
+  (select count(*) from probe_results),
+  now()
+from latest
+on conflict (id) do update set
+  registered = excluded.registered,
+  cards_fetched = excluded.cards_fetched,
+  cards_ok = excluded.cards_ok,
+  with_endpoints = excluded.with_endpoints,
+  feedback = excluded.feedback,
+  reviewers = excluded.reviewers,
+  live = excluded.live,
+  flaky = excluded.flaky,
+  down = excluded.down,
+  measuring = excluded.measuring,
+  probes_total = excluded.probes_total,
+  computed_at = excluded.computed_at";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     common::init_tracing("trust");
@@ -88,6 +128,10 @@ async fn main() -> anyhow::Result<()> {
             Ok(rows) => tracing::info!(rows, "scoring pass complete"),
             Err(e) => tracing::error!(%e, "scoring pass failed"),
         }
+        match refresh_stats(&pool).await {
+            Ok(()) => tracing::info!("registry snapshot refreshed"),
+            Err(e) => tracing::error!(%e, "registry snapshot failed"),
+        }
         tokio::time::sleep(Duration::from_secs(1800)).await;
     }
 }
@@ -95,4 +139,9 @@ async fn main() -> anyhow::Result<()> {
 async fn run_scoring(pool: &PgPool) -> anyhow::Result<u64> {
     let result = sqlx::query(SCORE_SQL).execute(pool).await?;
     Ok(result.rows_affected())
+}
+
+async fn refresh_stats(pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::query(STATS_SQL).execute(pool).await?;
+    Ok(())
 }

@@ -2,7 +2,7 @@
 
 import { formatUnits } from "viem";
 import { useAccount, useWriteContract } from "wagmi";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Job } from "@/lib/api";
 import { hireRailAbi } from "@/lib/hireRailAbi";
 import { explorerTx, HIRE_RAIL } from "@/lib/chain";
@@ -16,15 +16,23 @@ function stageIndex(state: string): number {
   return i;
 }
 
-function whatHappensNext(job: Job): string {
+/// Render deadlines in UTC rather than the viewer's locale so the server and
+/// the browser produce the same string. A hydration mismatch here would make
+/// React throw away and re-render the panel.
+function formatDeadline(deadline: Date | null): string {
+  if (!deadline) return "the deadline";
+  return `${deadline.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+function whatHappensNext(job: Job, now: number): string {
   const deadline = job.deadline ? new Date(job.deadline) : null;
-  const overdue = deadline !== null && deadline.getTime() < Date.now();
+  const overdue = deadline !== null && deadline.getTime() < now;
   const direct = job.mode === "direct";
   switch (job.state) {
     case "funded":
       return overdue
         ? "The deadline passed without a delivery. You can take your money back now."
-        : `Waiting on the agent. If nothing arrives by ${deadline?.toLocaleString() ?? "the deadline"}, you can reclaim every token yourself.`;
+        : `Waiting on the agent. If nothing arrives by ${formatDeadline(deadline)}, you can reclaim every token yourself.`;
     case "submitted":
       return direct
         ? "The agent delivered. Nothing moves until you decide: accept and it gets paid immediately, or refuse and your money comes straight back."
@@ -46,12 +54,24 @@ export function JobPanel({ job }: { job: Job }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
+  // Time based branches only run once mounted, so the first client render
+  // matches what the server produced.
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
   const idx = stageIndex(job.state);
   const isMine =
     address !== undefined && address.toLowerCase() === job.hirer.toLowerCase();
   const deadline = job.deadline ? new Date(job.deadline) : null;
   const canReclaim =
-    job.state === "funded" && deadline !== null && deadline.getTime() < Date.now();
+    now !== null &&
+    job.state === "funded" &&
+    deadline !== null &&
+    deadline.getTime() < now;
   const canDecide = job.mode === "direct" && job.state === "submitted" && isMine;
 
   async function send(
@@ -138,7 +158,9 @@ export function JobPanel({ job }: { job: Job }) {
         })}
       </ol>
 
-      <p className="mt-3 text-sm text-ink/80">{whatHappensNext(job)}</p>
+      <p className="mt-3 text-sm text-ink/80">
+        {whatHappensNext(job, now ?? new Date(job.created_at).getTime())}
+      </p>
 
       {job.spec ? (
         <p className="mt-2 text-xs text-ink/60">Asked for: {job.spec}</p>

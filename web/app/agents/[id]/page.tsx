@@ -6,10 +6,8 @@ import {
   fetchAgentEndpoints,
   fetchAgentReviews,
   fetchAgentUptime,
-  type AgentCard,
-  type EndpointState,
-  type Reviews,
-} from "@/lib/api";
+} from "@/lib/api-server";
+import type { AgentCard, EndpointState, Reviews } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 

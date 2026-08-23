@@ -34,7 +34,8 @@ check:
 	cd web && npx tsc --noEmit
 
 e2e:
-	cd web && npx playwright test e2e/golden
+	@set -a; . ./.devchain.env; set +a; \
+	cd web && DEV_KERNEL=$$DEV_KERNEL DEV_TOKEN=$$DEV_TOKEN npx playwright test e2e/golden
 
 coldstart:
 	bash scripts/coldstart_test.sh

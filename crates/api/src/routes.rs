@@ -216,30 +216,32 @@ pub async fn get_agent(
 }
 
 pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, StatusCode> {
+    // Read the snapshot the trust engine maintains rather than counting six
+    // million score rows per page load. computed_at travels with it so the
+    // page can say how fresh these are instead of implying they are live.
     let row = sqlx::query(
-        "select
-           (select count(*) from agents) as registered,
-           (select count(*) from agents where card_status = 'ok') as cards_ok,
-           (select count(*) from agents where endpoints is not null and jsonb_array_length(endpoints) > 0) as with_endpoints,
-           (select count(*) from agents where card_fetched_at is not null) as cards_fetched,
-           (select count(*) from feedback where not revoked) as feedback,
-           (select count(distinct reviewer) from feedback) as reviewers,
-           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'live') as live,
-           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'flaky') as flaky,
-           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'down') as down,
-           (select count(*) from (select distinct on (agent_id) status from agent_scores order by agent_id, computed_at desc) t where t.status = 'measuring') as measuring,
-           (select count(*) from probe_results) as probes_total,
-           (select max(last_block) from indexer_state) as indexed_to_block,
-           (select max(updated_at) from indexer_state) as indexed_at",
+        "select s.registered, s.cards_fetched, s.cards_ok, s.with_endpoints,
+                s.feedback, s.reviewers, s.live, s.flaky, s.down, s.measuring,
+                s.probes_total, s.computed_at,
+                (select max(last_block) from indexer_state) as indexed_to_block,
+                (select max(updated_at) from indexer_state) as indexed_at
+           from registry_stats s where s.id = 1",
     )
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
     .map_err(|e| {
         tracing::error!(%e, "stats query failed");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    let Some(row) = row else {
+        // Before the first scoring pass there is genuinely nothing measured,
+        // and the UI is built to say so rather than show zeroes as fact.
+        return Ok(Json(json!({ "measured": false })));
+    };
+
     Ok(Json(json!({
+        "measured": true,
         "registered": row.get::<i64, _>("registered"),
         "cards_ok": row.get::<i64, _>("cards_ok"),
         "with_endpoints": row.get::<i64, _>("with_endpoints"),
@@ -251,6 +253,7 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
         "down": row.get::<i64, _>("down"),
         "measuring": row.get::<i64, _>("measuring"),
         "probes_total": row.get::<i64, _>("probes_total"),
+        "computed_at": row.get::<chrono::DateTime<chrono::Utc>, _>("computed_at").to_rfc3339(),
         "indexed_to_block": row.get::<Option<i64>, _>("indexed_to_block"),
         "indexed_at": row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("indexed_at")
             .map(|t| t.to_rfc3339()),
@@ -259,6 +262,10 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
 
 /// 168 hourly buckets for the probe strip: per hour, the share of probes
 /// that succeeded, or null where no probe ran.
+/// @dev Whole finished hours only. The hour in progress is excluded so the
+/// response is identical for every caller within the same hour: a server
+/// render and the browser hydrating against it must agree exactly, and a
+/// bucket that gains probes between the two would break that.
 pub async fn agent_uptime(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -311,8 +318,10 @@ pub struct BulkUptimeParams {
     pub ids: String,
 }
 
-/// Bulk probe strips: one request returns the 168 hourly buckets for up to
-/// one hundred agents, keyed by agent id.
+/// Bulk probe strips: one request returns 168 contiguous hourly buckets for
+/// up to one hundred agents, keyed by agent id. Whole finished hours only,
+/// for the same reason as the single agent series: the response has to be
+/// identical for every caller within the hour or hydration mismatches.
 pub async fn bulk_uptime(
     State(state): State<AppState>,
     Query(params): Query<BulkUptimeParams>,
@@ -328,17 +337,14 @@ pub async fn bulk_uptime(
         return Err(StatusCode::BAD_REQUEST);
     }
     let rows: Vec<(String, chrono::DateTime<chrono::Utc>, Option<f64>, i64)> = sqlx::query_as(
-        "with observer_outage as (
-           select date_trunc('hour', probed_at) as h from probe_results
-           where probed_at > now() - interval '7 days'
-           group by 1 having count(*) > 100 and avg(ok::int) < 0.05
-         )
-         select pr.agent_id::text, date_trunc('hour', pr.probed_at) as hour,
-                avg(pr.ok::int)::float8, count(*)
-         from probe_results pr
-         where pr.agent_id = any(select unnest($1::numeric[]))
-           and pr.probed_at > now() - interval '168 hours'
-           and date_trunc('hour', pr.probed_at) not in (select h from observer_outage)
+        "select a.id::text, h.hour, avg(pr.ok::int)::float8, count(pr.id)
+         from unnest($1::numeric[]) as a(id)
+         cross join generate_series(
+                date_trunc('hour', now()) - interval '168 hours',
+                date_trunc('hour', now()) - interval '1 hour', interval '1 hour') h(hour)
+         left join probe_results pr
+           on pr.agent_id = a.id
+          and pr.probed_at >= h.hour and pr.probed_at < h.hour + interval '1 hour'
          group by 1, 2 order by 1, 2",
     )
     .bind(&ids)
