@@ -28,6 +28,15 @@ const DEADLINE_CHOICES = [
   { label: "7 days", secs: 604800 },
 ];
 
+// Mirrors HireRail.Mode. The wording here is the whole honesty of the
+// product: one of these is fast because it is trust based, and we say so.
+const MODE_DIRECT = 0;
+const MODE_PROTECTED = 1;
+
+// The live mainnet policy window, read from the contract at deploy time and
+// echoed here so a protected deadline is never shorter than it.
+const PROTECTED_MIN_SECS = 604800;
+
 type Props = {
   agentId: string;
   agentName: string;
@@ -53,6 +62,7 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
   );
   const [budgetText, setBudgetText] = useState("1");
   const [deadlineSecs, setDeadlineSecs] = useState(86400);
+  const [mode, setMode] = useState<number>(MODE_DIRECT);
   const [step, setStep] = useState<"form" | "approving" | "hiring" | "done">(
     "form",
   );
@@ -146,13 +156,20 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
         await refetchAllowance();
       }
       setStep("hiring");
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineSecs);
+      // A protected job must outlast the dispute window or it expires before
+      // it can settle. The contract enforces this too; we just never send a
+      // transaction we know will revert.
+      const effectiveSecs =
+        mode === MODE_PROTECTED
+          ? Math.max(deadlineSecs, PROTECTED_MIN_SECS + 86400)
+          : deadlineSecs;
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + effectiveSecs);
       const specHash = await hashSpec(spec);
       const hash = await writeContractAsync({
         abi: hireRailAbi,
         address: HIRE_RAIL as `0x${string}`,
         functionName: "hire",
-        args: [BigInt(agentId), provider, budget, deadline, specHash, spec],
+        args: [BigInt(agentId), provider, budget, deadline, specHash, spec, mode],
       });
       setHireHash(hash);
       await refetchBalance();
@@ -201,7 +218,11 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
             <p className="font-data text-lg">Hired.</p>
             <p className="mt-2 text-sm text-ink/80">
               The escrow is funded and the agent has until your deadline to
-              deliver. If nothing arrives you can reclaim every token.
+              deliver.{" "}
+              {mode === MODE_DIRECT
+                ? "When it delivers, press Accept on the job and it gets paid immediately."
+                : "When it delivers, a seven day dispute window opens before anyone can settle."}{" "}
+              If nothing arrives you can reclaim every token.
             </p>
             {hireHash ? (
               <p className="font-data mt-3 text-xs break-all">
@@ -264,6 +285,44 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
             </Row>
 
             <Row>
+              <Label>HOW THE MONEY GETS RELEASED</Label>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => setMode(MODE_DIRECT)}
+                  className={`rounded border p-3 text-left ${
+                    mode === MODE_DIRECT ? "border-ink bg-ink/5" : "border-dormant/50"
+                  }`}
+                >
+                  <span className="block text-sm font-medium">
+                    You release it
+                  </span>
+                  <span className="mt-1 block text-xs text-ink/70">
+                    The agent gets paid the moment you press Accept, in one
+                    transaction. If you never accept, your money comes back to
+                    you at the deadline. The agent is trusting you, and there
+                    is no dispute process.
+                  </span>
+                </button>
+                <button
+                  onClick={() => setMode(MODE_PROTECTED)}
+                  className={`rounded border p-3 text-left ${
+                    mode === MODE_PROTECTED ? "border-ink bg-ink/5" : "border-dormant/50"
+                  }`}
+                >
+                  <span className="block text-sm font-medium">
+                    Nobody releases it alone
+                  </span>
+                  <span className="mt-1 block text-xs text-ink/70">
+                    A seven day window opens when the agent delivers. You can
+                    dispute inside it, and a voter panel decides. Neither of
+                    you can move the money on your own. Slower, and the
+                    deadline has to be longer than seven days.
+                  </span>
+                </button>
+              </div>
+            </Row>
+
+            <Row>
               <Label>DEADLINE</Label>
               <div className="flex gap-2">
                 {DEADLINE_CHOICES.map((d) => (
@@ -281,8 +340,9 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                 ))}
               </div>
               <p className="mt-1 text-xs text-ink/60">
-                If the agent has not delivered by then, you can take your money
-                back yourself. Nobody has to approve it.
+                {mode === MODE_PROTECTED
+                  ? "Protected jobs need a deadline beyond the seven day window, so we set it to eight days. If the agent never delivers, you can take your money back yourself."
+                  : "If the agent has not delivered by then, you can take your money back yourself. Nobody has to approve it."}
               </p>
             </Row>
 
@@ -352,9 +412,12 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                 </p>
               ) : null}
               <p className="mt-3 text-xs text-ink/60">
-                We ask your wallet to approve the exact budget and nothing more.
-                The money sits in escrow, not with us, and not with the agent
-                until the work is accepted.
+                We ask your wallet to approve the exact budget and nothing
+                more. The money sits in the ERC-8183 escrow contract, not with
+                us and not with the agent.{" "}
+                {mode === MODE_DIRECT
+                  ? "In this mode our contract is the escrow's evaluator, and the only code path that releases it requires your address. We cannot pay the agent without you."
+                  : "In this mode we are not the evaluator at all: the protocol's own router and policy decide."}
               </p>
             </div>
           </>

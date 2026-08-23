@@ -19,13 +19,16 @@ function stageIndex(state: string): number {
 function whatHappensNext(job: Job): string {
   const deadline = job.deadline ? new Date(job.deadline) : null;
   const overdue = deadline !== null && deadline.getTime() < Date.now();
+  const direct = job.mode === "direct";
   switch (job.state) {
     case "funded":
       return overdue
         ? "The deadline passed without a delivery. You can take your money back now."
         : `Waiting on the agent. If nothing arrives by ${deadline?.toLocaleString() ?? "the deadline"}, you can reclaim every token yourself.`;
     case "submitted":
-      return "The agent delivered. The dispute window is running: once it closes, anyone can settle the job and the agent gets paid.";
+      return direct
+        ? "The agent delivered. Nothing moves until you decide: accept and it gets paid immediately, or refuse and your money comes straight back."
+        : "The agent delivered. The seven day dispute window is running. Once it closes anyone can settle the job and the agent gets paid.";
     case "completed":
       return "Settled. The agent has been paid from escrow.";
     case "rejected":
@@ -49,6 +52,33 @@ export function JobPanel({ job }: { job: Job }) {
   const deadline = job.deadline ? new Date(job.deadline) : null;
   const canReclaim =
     job.state === "funded" && deadline !== null && deadline.getTime() < Date.now();
+  const canDecide = job.mode === "direct" && job.state === "submitted" && isMine;
+
+  async function send(
+    fn: "accept" | "rejectWork",
+    label: string,
+  ): Promise<void> {
+    setBusy(true);
+    setNote(null);
+    try {
+      const hash = await writeContractAsync({
+        abi: hireRailAbi,
+        address: HIRE_RAIL as `0x${string}`,
+        functionName: fn,
+        args: [BigInt(job.job_id)],
+      });
+      setNote(`${label} sent: ${hash}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setNote(
+        /rejected|denied/i.test(msg)
+          ? "You cancelled the signature. Nothing changed and the escrow is still held."
+          : msg.slice(0, 180),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onReclaim() {
     setBusy(true);
@@ -115,7 +145,8 @@ export function JobPanel({ job }: { job: Job }) {
       ) : null}
 
       <p className="font-data mt-2 text-xs text-ink/60">
-        JOB {job.job_id} · STATE {job.state.toUpperCase()} · CHAIN{" "}
+        JOB {job.job_id} · STATE {job.state.toUpperCase()} ·{" "}
+        {job.mode === "direct" ? "YOU RELEASE" : "PROTECTED"} · CHAIN{" "}
         {job.chain_id}
         {job.create_tx ? (
           <>
@@ -144,6 +175,25 @@ export function JobPanel({ job }: { job: Job }) {
           </>
         ) : null}
       </p>
+
+      {canDecide ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => send("accept", "Accept")}
+            disabled={busy}
+            className="rounded bg-ink px-4 py-1.5 text-sm text-paper disabled:opacity-60"
+          >
+            {busy ? "Working" : "Accept and pay"}
+          </button>
+          <button
+            onClick={() => send("rejectWork", "Refusal")}
+            disabled={busy}
+            className="rounded border border-flag px-4 py-1.5 text-sm text-flag disabled:opacity-60"
+          >
+            Refuse and refund me
+          </button>
+        </div>
+      ) : null}
 
       {canReclaim && isMine ? (
         <button

@@ -522,6 +522,7 @@ fn job_row_to_json(r: &sqlx::postgres::PgRow) -> serde_json::Value {
         "budget": amount_str(&budget),
         "refunded": refunded.as_ref().map(amount_str),
         "state": r.get::<String, _>("state"),
+        "mode": r.get::<String, _>("mode"),
         "kernel_status": r.get::<Option<i32>, _>("kernel_status"),
         "chain_id": r.get::<i64, _>("chain_id"),
         "spec": r.get::<Option<String>, _>("spec"),
@@ -538,7 +539,7 @@ fn job_row_to_json(r: &sqlx::postgres::PgRow) -> serde_json::Value {
 }
 
 const JOB_SELECT: &str = "select j.job_id::text as job_id, j.agent_id::text as agent_id,
-        a.name as agent_name, j.hirer, j.provider, j.budget, j.refunded, j.state,
+        a.name as agent_name, j.hirer, j.provider, j.budget, j.refunded, j.state, j.mode,
         j.kernel_status, j.chain_id, j.spec, j.created_at, j.deadline,
         j.submitted_at, j.settled_at, j.create_tx, j.settle_tx
    from jobs j left join agents a on a.agent_id = j.agent_id";

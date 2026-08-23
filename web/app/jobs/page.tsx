@@ -13,6 +13,13 @@ export default function JobsPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      // This page is "my hires", so with no wallet connected there is
+      // nothing of yours to show. Never list other people's jobs here.
+      if (!address) {
+        setJobs([]);
+        setLoaded(true);
+        return;
+      }
       const res = await fetchJobs(address);
       if (!cancelled) {
         setJobs(res?.items ?? null);
@@ -42,7 +49,7 @@ export default function JobsPage() {
         </p>
       ) : null}
 
-      {loaded && jobs !== null && jobs.length === 0 ? (
+      {loaded && isConnected && jobs !== null && jobs.length === 0 ? (
         <p className="mt-4 max-w-xl text-sm text-ink/80">
           No hires yet. Find an agent that is answering, press Hire, and the
           job will appear here with its escrow and its deadline.

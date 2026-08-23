@@ -150,6 +150,7 @@ export type Job = {
   budget: string;
   refunded: string | null;
   state: string;
+  mode: string;
   kernel_status: number | null;
   chain_id: number;
   spec: string | null;

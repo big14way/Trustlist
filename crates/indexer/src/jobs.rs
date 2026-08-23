@@ -23,7 +23,8 @@ sol! {
         address provider,
         uint256 budget,
         uint64 deadline,
-        bytes32 specHash
+        bytes32 specHash,
+        uint8 mode
     );
 
     #[derive(Debug)]
@@ -117,12 +118,14 @@ impl<P: Provider + Clone> JobFollower<P> {
                 let ev = log.log_decode::<Hired>()?.inner.data;
                 let deadline = DateTime::from_timestamp(ev.deadline as i64, 0)
                     .context("deadline out of range")?;
+                // 0 is Direct, 1 is Protected, matching HireRail.Mode.
+                let mode = if ev.mode == 1 { "protected" } else { "direct" };
                 sqlx::query(
                     "insert into jobs (job_id, agent_id, hirer, provider, token, budget,
                                        spec_hash, state, created_at, deadline, create_tx,
-                                       chain_id, rail, kernel_status)
+                                       chain_id, rail, kernel_status, mode)
                      values ($1::numeric, $2::numeric, $3, $4, $5, $6::numeric, $7, 'funded',
-                             $8, $9, $10, $11, $12, 1)
+                             $8, $9, $10, $11, $12, 1, $13)
                      on conflict (job_id) do nothing",
                 )
                 .bind(ev.jobId.to_string())
@@ -137,9 +140,10 @@ impl<P: Provider + Clone> JobFollower<P> {
                 .bind(tx.as_slice())
                 .bind(self.chain_id as i64)
                 .bind(self.rail.as_slice())
+                .bind(mode)
                 .execute(&self.pool)
                 .await?;
-                tracing::info!(job_id = %ev.jobId, agent_id = %ev.agentId, "job hired");
+                tracing::info!(job_id = %ev.jobId, agent_id = %ev.agentId, mode, "job hired");
             } else if *topic0 == Settled::SIGNATURE_HASH {
                 let ev = log.log_decode::<Settled>()?.inner.data;
                 sqlx::query(
