@@ -152,6 +152,19 @@ export default async function Home() {
       </section>
 
       <footer className="mt-16 border-t border-dormant/40 pt-6">
+        <nav className="font-data mb-3 flex flex-wrap gap-4 text-xs">
+          <a className="underline" href="/jobs">
+            My hires
+          </a>
+          <a
+            className="underline"
+            href="https://github.com/big14way/Trustlist"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Source
+          </a>
+        </nav>
         <p className="font-data text-xs text-dormant">
           M2: probing and liveness. Trust scoring and hiring arrive in the
           milestones behind this page. Every number and every probe cell above

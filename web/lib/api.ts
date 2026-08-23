@@ -140,3 +140,28 @@ export function fetchAgentEndpoints(
     `/v1/agents/${encodeURIComponent(id)}/endpoints`,
   );
 }
+
+export type Job = {
+  job_id: string;
+  agent_id: string;
+  agent_name: string | null;
+  hirer: string;
+  provider: string | null;
+  budget: string;
+  refunded: string | null;
+  state: string;
+  kernel_status: number | null;
+  chain_id: number;
+  spec: string | null;
+  created_at: string;
+  deadline: string | null;
+  submitted_at: string | null;
+  settled_at: string | null;
+  create_tx: string | null;
+  settle_tx: string | null;
+};
+
+export function fetchJobs(hirer?: string): Promise<{ items: Job[] } | null> {
+  const qs = hirer ? `?hirer=${encodeURIComponent(hirer)}` : "";
+  return get<{ items: Job[] }>(`/v1/jobs${qs}`);
+}
