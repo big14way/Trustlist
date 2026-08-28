@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-// Golden journey 02: a reader does not take our word for a score. They open
+// Golden journey 03: a reader does not take our word for a score. They open
 // an agent, open the verify drawer, and their own browser asks the contract
 // whether those numbers are in the published Merkle root. The same proof is
 // then replayed with an inflated trust score, which the contract must

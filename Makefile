@@ -4,19 +4,10 @@ SHELL := /bin/bash
 
 .PHONY: demo verify check e2e coldstart reset db migrate
 
-# Start the local stack: Postgres, migrations, api, web.
-# Indexer, prober, and trust engine join this target at their milestones.
-demo: db
-	@set -a && source .env 2>/dev/null || source .env.example; set +a; \
-	cargo build --workspace && \
-	(cargo run -p api &) && \
-	(cd web && npm run dev &) && \
-	echo "waiting for health" && \
-	for i in $$(seq 1 60); do \
-	  curl -sf http://localhost:$${API_PORT:-8080}/v1/health >/dev/null && break; sleep 1; \
-	done && \
-	curl -sf http://localhost:$${API_PORT:-8080}/v1/health && echo && \
-	echo "api up, web starting at http://localhost:3000"
+# Start the local stack: Postgres, migrations, a real data seed, then the
+# indexer, prober, trust engine, api, and web. See SPEC Section 30.1.
+demo:
+	bash scripts/demo.sh
 
 db:
 	docker compose up -d db
