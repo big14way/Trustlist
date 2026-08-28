@@ -11,6 +11,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { hireRailAbi } from "@/lib/hireRailAbi";
+import { useChainTime } from "@/lib/useChainTime";
 import {
   activeChain,
   erc20Abi,
@@ -117,6 +118,19 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
 
   const { writeContractAsync } = useWriteContract();
   const [hireHash, setHireHash] = useState<`0x${string}` | undefined>();
+  const chainTime = useChainTime();
+
+  // Escape closes the sheet, which is what anyone who has used a dialog
+  // expects. It is deliberately refused while a transaction is in flight:
+  // closing then would lose the hash the user needs to follow it.
+  const canDismiss = step === "form" || step === "done";
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && canDismiss) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canDismiss, onClose]);
   const receipt = useWaitForTransactionReceipt({ hash: hireHash });
 
   useEffect(() => {
@@ -163,7 +177,12 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
         mode === MODE_PROTECTED
           ? Math.max(deadlineSecs, PROTECTED_MIN_SECS + 86400)
           : deadlineSecs;
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + effectiveSecs);
+      // From the chain's clock, not the visitor's. HireRail compares this
+      // against block.timestamp, so a machine running slow would otherwise
+      // send a deadline the contract has already passed and get a bare
+      // DeadlineTooSoon revert.
+      const base = chainTime ?? Math.floor(Date.now() / 1000);
+      const deadline = BigInt(base + effectiveSecs);
       const specHash = await hashSpec(spec);
       const hash = await writeContractAsync({
         abi: hireRailAbi,
@@ -200,6 +219,10 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label={`Hire ${agentName}`}
+      onClick={(e) => {
+        // Clicking the backdrop is the other thing people try.
+        if (e.target === e.currentTarget && canDismiss) onClose();
+      }}
     >
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-lg border border-dormant/40 bg-paper p-6 sm:rounded-lg">
         <div className="flex items-start justify-between gap-4">

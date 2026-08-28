@@ -2,10 +2,11 @@
 
 import { formatUnits } from "viem";
 import { useAccount, useWriteContract } from "wagmi";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Job } from "@/lib/api";
 import { hireRailAbi } from "@/lib/hireRailAbi";
 import { explorerTx, HIRE_RAIL } from "@/lib/chain";
+import { useChainTime } from "@/lib/useChainTime";
 
 // The kernel's own job states. We render what the chain says, never a
 // guess, and we say plainly what happens next in each one.
@@ -56,22 +57,22 @@ export function JobPanel({ job }: { job: Job }) {
 
   // Time based branches only run once mounted, so the first client render
   // matches what the server produced.
-  const [now, setNow] = useState<number | null>(null);
-  useEffect(() => {
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(t);
-  }, []);
 
+
+  const chainTime = useChainTime();
   const idx = stageIndex(job.state);
+  // The kernel decides expiry by block.timestamp, so the button that offers
+  // a reclaim has to ask the same clock. Using the browser's would show the
+  // button early on a fast machine and hide it on a slow one.
+  const chainNow = chainTime === null ? null : chainTime * 1000;
   const isMine =
     address !== undefined && address.toLowerCase() === job.hirer.toLowerCase();
   const deadline = job.deadline ? new Date(job.deadline) : null;
   const canReclaim =
-    now !== null &&
+    chainNow !== null &&
     job.state === "funded" &&
     deadline !== null &&
-    deadline.getTime() < now;
+    deadline.getTime() < chainNow;
   const canDecide =
     job.mode === "direct" && job.state === "submitted" && isMine;
 
@@ -160,7 +161,7 @@ export function JobPanel({ job }: { job: Job }) {
       </ol>
 
       <p className="mt-3 text-sm text-ink/80">
-        {whatHappensNext(job, now ?? new Date(job.created_at).getTime())}
+        {whatHappensNext(job, chainNow ?? new Date(job.created_at).getTime())}
       </p>
 
       {job.spec ? (

@@ -81,3 +81,20 @@ export async function tokenBalance(
 export async function mineABlock(): Promise<void> {
   await rpc("anvil_mine", []);
 }
+
+/// Move the chain forward. The job panel decides whether the deadline has
+/// passed, and the kernel decides whether the refund is claimable, so a test
+/// about expiry has to advance both this and the browser clock.
+export async function advanceChain(seconds: number): Promise<void> {
+  await rpc("evm_increaseTime", [seconds]);
+  await rpc("anvil_mine", []);
+}
+
+/// The timestamp the chain currently believes, which is the one the kernel
+/// compares a deadline against.
+export async function chainTime(): Promise<number> {
+  const block = (await rpc("eth_getBlockByNumber", ["latest", false])) as {
+    timestamp: string;
+  };
+  return Number(BigInt(block.timestamp));
+}
