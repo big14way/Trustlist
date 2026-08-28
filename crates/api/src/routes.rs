@@ -642,6 +642,10 @@ pub async fn get_job(
     Ok(Json(job_row_to_json(&row)))
 }
 
+fn hex_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) || !s.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
@@ -709,18 +713,20 @@ pub async fn published_snapshot(
     })))
 }
 
-/// The most recent Merkle snapshot of scores. With `?payload=true` the
-/// response carries every leaf, so a reader can rebuild the tree, confirm the
-/// root, and check any single agent without trusting this endpoint.
+/// The most recent Merkle snapshot a reader can actually check, which means
+/// the most recent one published on chain. The trust engine builds a snapshot
+/// every cycle, but an unpublished root proves nothing, so a built-but-not
+/// published snapshot is only returned when nothing has been published yet,
+/// and it says so. With `?payload=true` the response carries every leaf.
 pub async fn latest_snapshot(
     State(state): State<AppState>,
     Query(q): Query<SnapshotQuery>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let row = sqlx::query(
         "select id, root_hex, agent_count, extract(epoch from computed_at)::bigint as computed_at,
-                tx_hash, block_number, published, payload
+                tx_hash, block_number, published, onchain_index, contract, payload
          from snapshots where root_hex is not null
-         order by computed_at desc limit 1",
+         order by published desc, computed_at desc limit 1",
     )
     .fetch_optional(&state.pool)
     .await
@@ -728,13 +734,19 @@ pub async fn latest_snapshot(
     .ok_or(StatusCode::NOT_FOUND)?;
 
     let tx: Option<Vec<u8>> = row.try_get("tx_hash").ok().flatten();
+    let contract: Option<Vec<u8>> = row.try_get("contract").ok().flatten();
     Ok(Json(json!({
         "id": row.get::<i64, _>("id"),
+        // The index inside the contract's own array. Callers must use this
+        // rather than deriving it from our id: we build far more snapshots
+        // than we publish, so the two sequences do not line up.
+        "onchain_index": row.get::<Option<i32>, _>("onchain_index"),
+        "contract": contract.map(|b| format!("0x{}", hex_string(&b))),
         "merkle_root": row.get::<Option<String>, _>("root_hex"),
         "agent_count": row.get::<i32, _>("agent_count"),
         "computed_at": row.get::<Option<i64>, _>("computed_at"),
         "published": row.get::<bool, _>("published"),
-        "tx_hash": tx.map(|b| format!("0x{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>())),
+        "tx_hash": tx.map(|b| format!("0x{}", hex_string(&b))),
         "block_number": row.get::<Option<i64>, _>("block_number"),
         "payload": if q.payload {
             row.get::<Option<serde_json::Value>, _>("payload")

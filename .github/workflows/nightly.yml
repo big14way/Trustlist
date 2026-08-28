@@ -1,0 +1,30 @@
+name: nightly
+
+# Cold start rot is the most common way a working project fails in front of a
+# judge, and it only shows up on a machine that has never seen the repo. So
+# this runs on a schedule rather than on push, where the cache would hide it.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  coldstart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cold start from a clean container
+        env:
+          BSC_RPC_HTTP: https://bsc-rpc.publicnode.com
+          # A cold machine compiles the whole Rust workspace, which is the
+          # slow step. The 5 minute target in SPEC 30.1 assumes prebuilt
+          # artifacts; this budget is what an uncached build actually needs,
+          # and the real elapsed time is printed either way.
+          COLDSTART_BUDGET_SECS: "1500"
+        run: bash scripts/coldstart_test.sh
+      - name: Show the logs if it failed
+        if: failure()
+        run: tail -50 /tmp/api.log /tmp/web.log 2>/dev/null || true
