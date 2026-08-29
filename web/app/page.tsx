@@ -247,6 +247,9 @@ export default async function Home({
           <a className="underline" href="/stats">
             Registry health
           </a>
+          <a className="underline" href="/sessions">
+            Spend caps
+          </a>
           <a className="underline" href="/methodology">
             How the numbers are made
           </a>

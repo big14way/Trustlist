@@ -260,3 +260,82 @@ that builds the tree and the API that serves proofs call the same code, so
 there is one implementation on our side and one in the contract.
 
 Reproduce it: `cd contracts && forge test --match-test rust_publisher -vv`
+
+## 16. Altana, re-verified before building (29 August 2026)
+
+Section 6 was checked on 17 August. The SDK moved a version the next day, so
+everything below was re-read from the live package and the live relay rather
+than trusted from the earlier note.
+
+- **`@altananetwork/sdk` is now 0.8.0**, published 18 August 2026. Section 6
+  recorded 0.7.1. Read from the npm registry and the published tarball.
+- **The session API matches what section 6 described**, and the 0.8.0 types
+  make the shape exact: `grantSession({ wallet, signer, expiry, permissions })`
+  where `permissions` carries `calls: [{ to, signature }]` and
+  `spend: [{ limit, period, token? }]`, with `period` one of minute, hour, day,
+  week, month, or year. It returns a `Session` plus the grant's
+  `transactionHash`. `revokeSession({ wallet, signer, session })` takes the
+  session or its public key. Permissions and expiry are enforced by the
+  account contract at validation time, so a call outside them reverts.
+- **0.8.0 also ships helpers we did not know about**: `erc8183.ts`
+  (`buildHireCalls`, `hireErc8183Agent`, `settleErc8183Job`), `erc8004.ts`
+  (`registerErc8004Agent`), and a full `x402.ts`. Worth reading before we
+  write our own versions of any of it.
+- **BSC testnet is a real, full Altana deployment.** `BNB_TESTNET` is chain 97
+  with its own keystore, account stack, and relay. The keystore at
+  `0x6b8361C29d05D498b1a12B54A37310f94171E94A` has 8,756 bytes of code on
+  chain 97, and `https://testnet-relay.altana.network` answers.
+
+### The finding that matters: testnet does not avoid needing BNB
+
+We hoped the Altana track could be demonstrated on testnet without funding,
+because the track says testnet counts. It cannot, for two reasons that were
+tested rather than assumed.
+
+1. **The relay charges its fees in the native token only.** Asking both relays
+   for `wallet_getCapabilities` returns exactly one fee token per chain, and on
+   all four (Ethereum, Base, BSC mainnet, BSC testnet) it is the zero address,
+   the native coin. There is no ERC-20 fee path, so there is no way to pay for
+   a session grant with a token instead of BNB.
+
+2. **The relay's faucet does not deliver.** `fundNative` exists in the SDK and
+   is documented as funding an EOA on test networks. Called against the BSC
+   testnet relay for a cold address, it returned a real transaction hash
+   (`0x5599c5344d8712c0437ba21b3ea93274c88631d1894c5de28c77a9a86ecbe15c`,
+   block 127,805,643, status 1) whose recipient is the zero address and which
+   transferred nothing. The address stayed at 0 wei. A `grantSession` from an
+   unfunded wallet then failed with an empty revert reason, which is what an
+   account that cannot pay its fee looks like.
+
+The SDK's own config comment points at
+`https://testnet.bnbchain.org/faucet-smart` for funding, and that faucet
+requires 0.002 BNB on BSC mainnet.
+
+So the Altana track needs native BNB on whichever chain it runs on, and the
+testnet route costs more mainnet BNB (0.002 to satisfy the faucet) than doing
+the work directly on mainnet (about 0.0002 in total gas). Mainnet remains the
+cheaper path, which is the same conclusion section 13 reached about judge mode
+for a different reason.
+
+### The relay went unreachable mid build (29 August 2026)
+
+While wiring the session page, every Altana host stopped answering: the
+mainnet relay, the testnet relay, `altana.network`, `docs.altana.network`, and
+`explorer.altana.network` all time out at the TCP level. DNS still resolves
+(`relay.altana.network` to 69.46.46.54). General connectivity from the same
+machine is fine at the same moment: npm returns 200 and a BSC RPC call returns
+200.
+
+The mainnet relay had answered `wallet_getCapabilities` normally about twenty
+minutes earlier, which is where the fee token finding above comes from. So
+this is either an Altana outage or our address being blocked at their edge
+after a handful of probe requests. We cannot tell which from outside, and it
+would be wrong to write down either one as the cause.
+
+What this means for the build: the session grant and revoke paths cannot be
+exercised live until the relay answers again, on top of the funding
+requirement. The code is written against the 0.8.0 types and type checks
+against them, the page states the funding requirement before a user tries, and
+golden journey 02 skips with the specific reason rather than passing on a
+technicality. None of that is the same as having seen a session granted, and
+the submission document says so.
