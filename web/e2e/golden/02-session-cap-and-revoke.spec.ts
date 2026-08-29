@@ -15,6 +15,28 @@ import { expect, test } from "@playwright/test";
 
 type Balance = { funded: boolean; address: string; wei: bigint };
 
+const RELAY =
+  process.env.ALTANA_RELAY ?? "https://relay.altana.network";
+
+async function relayAnswers(): Promise<boolean> {
+  try {
+    const res = await fetch(RELAY, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "wallet_getCapabilities",
+        params: [],
+      }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 test.describe("session cap and revoke", () => {
   test.beforeEach(async ({ page }) => {
     const cdp = await page.context().newCDPSession(page);
@@ -32,6 +54,17 @@ test.describe("session cap and revoke", () => {
   });
 
   test("a capped session, spent inside, then revoked", async ({ page }) => {
+    // Every session action goes through the Altana relay. A relay that is not
+    // answering makes this journey impossible for reasons that have nothing
+    // to do with our code, and waiting for an in browser fetch to give up on
+    // it takes minutes. So ask it directly first, with a short deadline.
+    const relayUp = await relayAnswers();
+    test.skip(
+      !relayUp,
+      `The Altana relay at ${RELAY} did not answer, so no session can be granted or revoked. ` +
+        `See docs/VERIFICATION.md section 16.`,
+    );
+
     await page.goto("/sessions");
 
     // The page has to be readable before anything is signed.
@@ -44,9 +77,9 @@ test.describe("session cap and revoke", () => {
       .getByRole("button", { name: "Create with a passkey" })
       .click();
 
-    // The wallet exists once the passkey ceremony completes.
+    // The wallet exists once the passkey ceremony and the relay call finish.
     const addressLink = sessions.getByRole("link").first();
-    await expect(addressLink).toBeVisible({ timeout: 60_000 });
+    await expect(addressLink).toBeVisible({ timeout: 90_000 });
     const address = (await addressLink.textContent())?.trim() ?? "";
     expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
 

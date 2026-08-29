@@ -16,11 +16,11 @@ Last updated 28 August 2026.
 | `scripts/audit_data.sh` run, table pasted below | done, 10 passed, 0 failed, 1 skipped |
 | `make verify` passes | done |
 | Contract line coverage on `contracts/src` | 100 percent |
-| Golden journeys | 4 of 5 pass, journey 02 needs the Altana track |
+| Golden journeys | all 5 written, 4 pass, journey 02 skips (Altana relay unreachable and wallet unfunded) |
 | Contracts deployed to BSC mainnet | **not done**, waiting on funding |
 | Contracts verified on BscScan | **not done**, follows deployment |
 | Two mainnet transactions inside the window | **not done**, waiting on funding |
-| Altana session and revoke hashes | **not done** |
+| Altana session and revoke hashes | **not done**, page and scoped permissions built, grant needs funds and a reachable relay |
 | `docs/ADVANTAGE_REPORT.md` with three real tasks | **not done** |
 | Judge mode | **not done** |
 | Live deployment URL | **not done**, local only |
@@ -96,11 +96,11 @@ Run with `make e2e` against a local chain.
 
 | Journey | State |
 |---|---|
-| 01 discover and hire | passes, 14.6s |
-| 02 session cap and revoke | not written, needs the Altana track |
-| 03 verify a score | passes, 1.8s |
-| 04 reclaim an expired job | passes, 7.6s |
-| 05 cold first visit, no wallet | passes, 4.9s |
+| 01 discover and hire | passes, 15.9s |
+| 02 session cap and revoke | written, skips with a stated reason: the Altana relay is not answering and the wallet is unfunded |
+| 03 verify a score | passes, 1.5s |
+| 04 reclaim an expired job | passes, 10.1s |
+| 05 cold first visit, no wallet | passes, 4.6s |
 
 Journey 01 prints its own discover-to-hired timing, which was 2.9 seconds on the last run. The spec's stranger-test target is a median under 90 seconds for a real person, which is a different and harder measurement that has not been run yet.
 
@@ -111,3 +111,10 @@ Journey 01 prints its own discover-to-hired timing, which was 2.9 seconds on the
 - **The cold start test does not meet the spec's 5 minute budget.** A machine that has never seen the repo compiles the whole Rust workspace, which dominates the time. Shipping prebuilt binaries as a release asset would fix it and has not been done.
 - **The indexer runs behind head**, currently by about 1.67 percent of the registry. The audit reports the gap rather than hiding it.
 - **Judge mode does not exist yet.** It needs a prefunded relayer.
+- **The Altana session flow has never been seen to run.** The page, the scoped
+  permissions, and the revoke path are written against the SDK's 0.8.0 types
+  and type check against them, but two things stopped a live grant: the wallet
+  needs native BNB, because the relay accepts no other fee token on any of its
+  four chains, and every Altana host went unreachable partway through the
+  build. Both are recorded with their evidence in `docs/VERIFICATION.md`
+  section 16.
