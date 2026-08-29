@@ -317,7 +317,7 @@ the work directly on mainnet (about 0.0002 in total gas). Mainnet remains the
 cheaper path, which is the same conclusion section 13 reached about judge mode
 for a different reason.
 
-### The relay went unreachable mid build (29 August 2026)
+### The relay stopped answering mid build (29 August 2026)
 
 While wiring the session page, every Altana host stopped answering: the
 mainnet relay, the testnet relay, `altana.network`, `docs.altana.network`, and
@@ -327,14 +327,25 @@ machine is fine at the same moment: npm returns 200 and a BSC RPC call returns
 200.
 
 The mainnet relay had answered `wallet_getCapabilities` normally about twenty
-minutes earlier, which is where the fee token finding above comes from. So
-this is either an Altana outage or our address being blocked at their edge
-after a handful of probe requests. We cannot tell which from outside, and it
-would be wrong to write down either one as the cause.
+minutes earlier, which is where the fee token finding above comes from.
 
-What this means for the build: the session grant and revoke paths cannot be
-exercised live until the relay answers again, on top of the funding
-requirement. The code is written against the 0.8.0 types and type checks
+An hour later `github.com` and `api.github.com` started failing the same way,
+from the same machine, while npm, a BSC RPC, and google.com kept returning
+200. Both sets of failures are timeouts rather than refusals or TLS errors,
+and both persisted across repeated attempts several minutes apart. That makes
+an Altana specific outage or an edge block on our address the wrong
+conclusion to draw: whatever is happening also affects an unrelated host, so
+the most it supports is that some routes out of this machine were failing at
+the time. The earlier draft of this note blamed Altana, which the GitHub
+evidence does not support.
+
+What is solid either way is the fee token finding above, which was measured
+while the relay was answering, and the fundNative result, which produced a
+real mined transaction we can still inspect.
+
+What this means for the build: the session grant and revoke paths have not
+been exercised live, both because the wallet is unfunded and because the relay
+was not reachable from here when we tried. The code is written against the 0.8.0 types and type checks
 against them, the page states the funding requirement before a user tries, and
 golden journey 02 skips with the specific reason rather than passing on a
 technicality. None of that is the same as having seen a session granted, and

@@ -115,6 +115,8 @@ Journey 01 prints its own discover-to-hired timing, which was 3.1 seconds on the
   permissions, and the revoke path are written against the SDK's 0.8.0 types
   and type check against them, but two things stopped a live grant: the wallet
   needs native BNB, because the relay accepts no other fee token on any of its
-  four chains, and every Altana host went unreachable partway through the
-  build. Both are recorded with their evidence in `docs/VERIFICATION.md`
-  section 16.
+  four chains, and the relay stopped answering from this machine partway
+  through the build. GitHub became unreachable in the same window while other
+  hosts stayed fine, so the second one is probably a local routing problem
+  rather than anything about Altana. Both are recorded with their evidence in
+  `docs/VERIFICATION.md` section 16.
