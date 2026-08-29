@@ -4,7 +4,7 @@ TrustList is an ERC-8004 agent marketplace for BNB Smart Chain that measures whi
 
 This document is the honest state of the build. Items that are not done say so. Nothing here is aspirational.
 
-Last updated 28 August 2026.
+Last updated 29 August 2026.
 
 ## Where things stand
 
@@ -102,7 +102,7 @@ Run with `make e2e` against a local chain.
 | 04 reclaim an expired job | passes, 10.1s |
 | 05 cold first visit, no wallet | passes, 4.6s |
 
-Journey 01 prints its own discover-to-hired timing, which was 2.9 seconds on the last run. The spec's stranger-test target is a median under 90 seconds for a real person, which is a different and harder measurement that has not been run yet.
+Journey 01 prints its own discover-to-hired timing, which was 3.1 seconds on the last run. The spec's stranger-test target is a median under 90 seconds for a real person, which is a different and harder measurement that has not been run yet.
 
 ## Known gaps, stated plainly
 
