@@ -12,6 +12,12 @@ Rehearsed 30 August 2026 at block 118,978,591.
 
 ## Before you start
 
+**A BscScan API key.** `BSCSCAN_API_KEY` is empty. Without it `--verify` has
+nothing to authenticate with and the contracts deploy unverified, which is
+recoverable with `forge verify-contract` but is one more thing to do later.
+`contracts/foundry.toml` has the etherscan section ready and reads the key
+from the environment.
+
 **One funded account.** Everything below can be done by a single address.
 `DEPLOYER_KEY` in `.env` derives to
 `0xFC4884Ee9553a7B412C923980c1cDD7dee82cB94`, the address in
@@ -104,17 +110,29 @@ NEXT_PUBLIC_CHAIN_ID=56
 
 ### 2. Publish a snapshot root
 
+The first time, and only the first time:
+
 ```
-bash scripts/ci_snapshot.sh
+bash scripts/publish_snapshot.sh --deploy-register
 ```
 
-That script deploys `TrustSnapshot` and publishes against whatever chain it
-is pointed at. For mainnet, point `DEVCHAIN_PORT` at nothing and run the
-publish script directly with the root from the newest snapshot, then record
-it with `scripts/record_publish.sh`. Set `NEXT_PUBLIC_TRUST_SNAPSHOT` only
-after this, because the verify drawer reads it together with
-`NEXT_PUBLIC_CHAIN_ID` and pointing a reader's wallet at the wrong chain
-shows a verification that cannot be true.
+Every time after that, with `TRUST_SNAPSHOT` set in `.env`:
+
+```
+bash scripts/publish_snapshot.sh
+```
+
+Do not use `scripts/ci_snapshot.sh` here. That one is built for CI: it starts
+anvil and deploys a fresh register on every run, which on mainnet would leave
+two registers and orphan every proof already published against the first.
+`publish_snapshot.sh` refuses to deploy a second register, refuses to publish
+a root that is already recorded as published, checks that the signer is a
+publisher before spending gas, and prints the cost before asking.
+
+Set `TRUST_SNAPSHOT` and `NEXT_PUBLIC_TRUST_SNAPSHOT` afterwards, together
+with `NEXT_PUBLIC_CHAIN_ID`. The verify drawer reads the address and the
+chain id as a pair, so setting one without the other points a reader's wallet
+at the wrong chain and shows a verification that cannot be true.
 
 ### 3. Register the agent
 

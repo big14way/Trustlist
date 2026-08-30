@@ -11,3 +11,11 @@ optimizer_runs = 200
 [rpc_endpoints]
 bsc = "${BSC_RPC_HTTP}"
 bsc_testnet = "${BSC_TESTNET_RPC_HTTP}"
+
+# Source verification. Without this section `forge script --verify` has
+# nowhere to send the source and the deploy succeeds with an unverified
+# contract, which then has to be verified by hand afterwards. Foundry knows
+# BscScan's endpoint for chain 56; the key is the only part we supply.
+[etherscan]
+bsc = { key = "${BSCSCAN_API_KEY}", chain = 56 }
+bsc_testnet = { key = "${BSCSCAN_API_KEY}", chain = 97 }
