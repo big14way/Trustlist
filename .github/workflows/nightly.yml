@@ -19,11 +19,6 @@ jobs:
       - name: Cold start from a clean container
         env:
           BSC_RPC_HTTP: https://bsc-rpc.publicnode.com
-          # Lets the container download the prebuilt binaries published by
-          # binaries.yml while this repository is private. A stranger needs
-          # no token because a public repository serves assets anonymously.
-          # See the note in scripts/coldstart_test.sh.
-          GH_TOKEN: ${{ github.token }}
           # SPEC 30.2's own number, now that it is met: measured at 150s on
           # 30 August 2026 with the prebuilt binaries in use. A run that
           # cannot download them compiles instead and takes about 470s, and
