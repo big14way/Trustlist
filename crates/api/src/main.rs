@@ -17,6 +17,7 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    common::handle_version_flag("api");
     common::init_tracing("api");
     let config = Config::from_env()?;
     let pool = common::connect_and_migrate(&config.database_url).await?;

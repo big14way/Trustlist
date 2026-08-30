@@ -37,6 +37,7 @@ fn make_provider(url: &str) -> anyhow::Result<impl Provider + Clone> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    common::handle_version_flag("indexer");
     common::init_tracing("indexer");
     let config = Config::from_env()?;
     let pool = common::connect_and_migrate(&config.database_url).await?;

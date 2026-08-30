@@ -38,6 +38,7 @@ struct Fetcher {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    common::handle_version_flag("prober");
     common::init_tracing("prober");
     let config = Config::from_env()?;
     let pool = common::connect_and_migrate(&config.database_url).await?;

@@ -145,6 +145,7 @@ on conflict (id) do update set
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    common::handle_version_flag("trust");
     common::init_tracing("trust");
     // `--once` runs a single pass and exits with the pass result. CI uses it
     // to build a real snapshot from the seed before publishing it, so the

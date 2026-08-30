@@ -1,0 +1,80 @@
+name: binaries
+
+# Publish prebuilt Linux binaries for every commit on main, so a machine that
+# has never seen the repo can run `make demo` without compiling the
+# workspace. That compile was 317 of the 423 seconds the cold start took, and
+# SPEC Section 30.2 gives it 300.
+#
+# The asset name carries the commit, and scripts/fetch_binaries.sh refuses
+# anything that is not the commit it has checked out, so a stale binary can
+# never be picked up by accident.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the services
+        env:
+          # Stamped into the binary so --version can prove which source it
+          # came from. fetch_binaries.sh checks that before accepting it.
+          TRUSTLIST_COMMIT: ${{ github.sha }}
+        run: cargo build --release --workspace
+
+      - name: Pack them
+        run: |
+          set -euo pipefail
+          NAME="trustlist-x86_64-unknown-linux-gnu-${{ github.sha }}.tar.gz"
+          tar -czf "$NAME" -C target/release api indexer prober trust
+          sha256sum "$NAME" > "$NAME.sha256"
+          ls -la "$NAME" "$NAME.sha256"
+          # Prove the thing we are about to publish actually runs, and that
+          # it reports the commit it was built from. Publishing a binary that
+          # cannot start would be worse than publishing none.
+          ./target/release/api --version | tee /tmp/v
+          grep -q "${{ github.sha }}" /tmp/v
+
+      - name: Publish to the rolling binaries release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NAME="trustlist-x86_64-unknown-linux-gnu-${{ github.sha }}.tar.gz"
+          # One long lived release holding the last few commits' binaries,
+          # rather than a release per commit cluttering the list.
+          gh release view binaries >/dev/null 2>&1 || \
+            gh release create binaries \
+              --title "Prebuilt binaries" \
+              --notes "Linux x86_64 service binaries, one set per commit on main. Downloaded by scripts/fetch_binaries.sh, which refuses any set that is not the commit you have checked out. Not intended for direct download." \
+              --latest=false
+          gh release upload binaries "$NAME" "$NAME.sha256" --clobber
+
+      - name: Keep only the most recent sets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Twelve assets is six commits, which is more history than anyone
+          # needs and keeps the release from growing without bound.
+          mapfile -t OLD < <(
+            gh release view binaries --json assets \
+              --jq '.assets | sort_by(.createdAt) | reverse | .[12:] | .[].name'
+          )
+          for asset in "${OLD[@]:-}"; do
+            [ -n "$asset" ] || continue
+            echo "removing $asset"
+            gh release delete-asset binaries "$asset" --yes
+          done

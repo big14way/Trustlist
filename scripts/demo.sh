@@ -32,8 +32,16 @@ say "postgres"
 docker compose up -d db
 docker compose exec -T db sh -c 'until pg_isready -U trustlist -d trustlist; do sleep 1; done'
 
-say "building (this is the slow step on a cold machine)"
-cargo build --release --workspace
+# Compiling the workspace is the slow step on a cold machine, and it is the
+# reason the cold start test used to run past its five minute budget. If a
+# prebuilt build exists for this exact commit, use it. Anything at all wrong
+# with that and we compile, which is the old behaviour.
+if bash scripts/fetch_binaries.sh; then
+  say "using prebuilt binaries for this commit"
+else
+  say "building (this is the slow step on a cold machine)"
+  cargo build --release --workspace
+fi
 
 if [ ! -d web/node_modules ]; then
   say "installing web dependencies"
