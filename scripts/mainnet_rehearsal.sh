@@ -232,6 +232,52 @@ RAIL_HOLDS=$(cast call "$U_TOKEN" 'balanceOf(address)(uint256)' "$RAIL" --rpc-ur
 [ "$RAIL_HOLDS" = "0" ] || fail "the rail is still holding $(cast to-unit "$RAIL_HOLDS" ether) U"
 echo "  provider was paid $(cast to-unit "$PAID" ether) U in full, the rail holds nothing"
 
+# The demo is very likely to be run from a single imported wallet: the same
+# address deploys, owns the agent, hires it, delivers, and accepts. Nothing
+# in HireRail forbids hirer == provider, but the kernel is not our contract,
+# so this is tested rather than reasoned about. It is also the cheapest
+# arrangement, because the budget returns to the address it left.
+say "7. the same wallet as both hirer and provider"
+SOLO_BEFORE=$(cast call "$U_TOKEN" 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC" | awk '{print $1}')
+[ "$SOLO_BEFORE" -ge "$BUDGET" ] || fail "the deployer should be holding the budget it was just paid"
+
+cast send "$U_TOKEN" 'approve(address,uint256)' "$RAIL" "$BUDGET" \
+  --private-key "$DEPLOYER_KEY" --rpc-url "$RPC" --json > /dev/null
+
+SOLO_DEADLINE=$(( $(cast block latest --field timestamp --rpc-url "$RPC") + 86400 ))
+SOLO_SPEC="Same wallet on both sides, which is how the demo will be run"
+SOLO_RECEIPT=$(cast send "$RAIL" \
+  'hire(uint256,address,uint256,uint64,bytes32,string,uint8)' \
+  "$AGENT_ID" "$DEPLOYER" "$BUDGET" "$SOLO_DEADLINE" "$(cast keccak "$SOLO_SPEC")" "$SOLO_SPEC" 0 \
+  --private-key "$DEPLOYER_KEY" --rpc-url "$RPC" --json) \
+  || fail "a hire where the hirer is also the provider was rejected"
+SOLO_JOB=$(python3 - "$RAIL" "$SOLO_RECEIPT" <<'PYEOF'
+import json, sys
+rail = sys.argv[1].lower()
+r = json.loads(sys.argv[2])
+if int(str(r["status"]), 16) != 1:
+    sys.exit("the one wallet hire reverted")
+ours = [l for l in r["logs"] if l["address"].lower() == rail]
+if len(ours) != 1:
+    sys.exit(f"expected one HireRail event, found {len(ours)}")
+print(int(ours[0]["topics"][1], 16))
+PYEOF
+)
+echo "  job $SOLO_JOB opened, hirer and provider are both $DEPLOYER"
+
+PROVIDER_KEY="$DEPLOYER_KEY" bash scripts/agent_deliver.sh "$SOLO_JOB" \
+  "delivered by the same wallet that hired" --rpc "$RPC" --kernel "$RAIL_KERNEL" --yes > /dev/null \
+  || fail "the one wallet provider could not submit"
+
+cast send "$RAIL" 'accept(uint256)' "$SOLO_JOB" \
+  --private-key "$DEPLOYER_KEY" --rpc-url "$RPC" --json > /dev/null \
+  || fail "accept failed on the one wallet job"
+
+SOLO_AFTER=$(cast call "$U_TOKEN" 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC" | awk '{print $1}')
+[ "$SOLO_AFTER" = "$SOLO_BEFORE" ] \
+  || fail "one wallet round trip lost tokens: $SOLO_BEFORE before, $SOLO_AFTER after"
+echo "  completed, and the budget came back: $(cast to-unit "$SOLO_AFTER" ether) U before and after"
+
 say "what the real run will cost"
 GAS_PRICE=$(cast gas-price --rpc-url "$FORK_RPC")
 REGISTER_GAS=$(printf '%s' "$REGISTER_OUT" | awk '/^  gas /{print $2; exit}')
