@@ -27,6 +27,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # contracts/lib holds forge-std and OpenZeppelin as submodules.
+          # Without this the working tree has empty directories there, and
+          # the first forge command to run is the one that fails. It used to
+          # survive by accident: the gate's forge test cloned the submodules
+          # itself, which no step before it needed. The snapshot step runs
+          # forge script earlier, so the accident stopped covering us.
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
