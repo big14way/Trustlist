@@ -44,8 +44,11 @@ export DEBIAN_FRONTEND=noninteractive
 
 # Only what the README asks a stranger to have.
 apt-get update -qq
+# docker.io ships the CLI but not the compose v2 plugin, and make demo drives
+# Postgres through `docker compose`. docker-compose-v2 supplies the plugin
+# (verified: 2.40.3 on noble).
 apt-get install -qq -y git curl make build-essential pkg-config libssl-dev \
-  docker.io ca-certificates python3 >/dev/null
+  docker.io docker-compose-v2 ca-certificates python3 >/dev/null
 
 curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable >/dev/null
 . "$HOME/.cargo/env"
