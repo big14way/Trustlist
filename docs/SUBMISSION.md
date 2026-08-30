@@ -4,7 +4,7 @@ TrustList is an ERC-8004 agent marketplace for BNB Smart Chain that measures whi
 
 This document is the honest state of the build. Items that are not done say so. Nothing here is aspirational.
 
-Last updated 29 August 2026.
+Last updated 30 August 2026.
 
 ## Where things stand
 
@@ -29,7 +29,7 @@ Last updated 29 August 2026.
 | Zero dead ends table walked manually | **not done** |
 | Demo video | **not done** |
 
-The single blocker behind most of the "not done" rows is that the deployer account holds no BNB. The measured cost of the entire remaining on chain plan is 0.000176 BNB at the current 0.05 gwei, itemised in the funding note below.
+The single blocker behind most of the "not done" rows is that the deployer account holds no BNB. The remaining on chain plan costs 0.000246 BNB in gas at the 0.05 gwei the chain is charging today, plus 0.002 BNB that becomes a job budget rather than being spent. The ask is 0.01 BNB, and the funding note below says why it is larger than the total.
 
 ## The data honesty audit
 
@@ -103,6 +103,41 @@ Run with `make e2e` against a local chain.
 | 05 cold first visit, no wallet | passes, 4.6s |
 
 Journey 01 prints its own discover-to-hired timing, which was 3.1 seconds on the last run. The spec's stranger-test target is a median under 90 seconds for a real person, which is a different and harder measurement that has not been run yet.
+
+## The funding note
+
+Every row in this section was measured on 30 August 2026, at BSC mainnet
+block 118,971,189 with `eth_gasPrice` at 0.05 gwei. The method for each one
+is in `docs/VERIFICATION.md` section 17. The deployer,
+`0xFC4884Ee9553a7B412C923980c1cDD7dee82cB94`, holds 0 wei and 0 U.
+
+| step | transaction | gas |
+|---|---|---|
+| deploy | TrustListHook | 189,252 |
+| deploy | HireRail | 2,520,666 |
+| snapshot | TrustSnapshot | 1,177,953 |
+| snapshot | publish the first root | 224,788 |
+| hire | approve U for HireRail | 61,067 |
+| hire | `hire`, Protected mode | 476,721 |
+| hire | `accept` | 118,108 |
+| budget | swap 0.002 BNB into U on PancakeSwap | 144,785 |
+| | total | 4,913,340, which is 0.000246 BNB |
+
+The `hire` and `accept` rows are the two mainnet transactions from our own
+contract that the spec asks for. Their gas comes from `HireRailFork.t.sol`,
+which runs them against the real ERC-8183 kernel on a fork, so these are not
+mock numbers.
+
+The swap is there because `HireRail.hire` rejects a zero budget, so a real
+hire needs a real balance of U, the kernel's settlement token. We hold none.
+0.002 BNB buys about 1.39 U at today's pool price.
+
+Ask for 0.01 BNB rather than 0.00025. Two things are not covered by the
+total. BSC's gas price is near its floor right now, and a 20 times spike
+would put the gas alone at 0.0049 BNB. And the Altana session grant and
+revoke are missing from the table entirely, because the relay charges its fee
+in native BNB and we have never completed a grant, so there is no measured
+number to enter.
 
 ## Known gaps, stated plainly
 

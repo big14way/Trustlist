@@ -6,7 +6,7 @@ All addresses are BSC mainnet, chain id 56, unless the row says otherwise.
 
 ## Ours
 
-Nothing of ours is on mainnet yet. Both contracts are written, tested, and exercised end to end on a local dev chain, and `HireRailFork.t.sol` proves HireRail works against the real deployed ERC-8183 stack on a mainnet fork. Deployment is waiting on funding the deployer, and the measured cost of the whole plan is about 0.00018 BNB at 0.05 gwei.
+Nothing of ours is on mainnet yet. Both contracts are written, tested, and exercised end to end on a local dev chain, and `HireRailFork.t.sol` proves HireRail works against the real deployed ERC-8183 stack on a mainnet fork. Deployment is waiting on funding the deployer. The whole remaining plan costs 0.000246 BNB in gas at 0.05 gwei, itemised transaction by transaction in `docs/SUBMISSION.md` and measured in `docs/VERIFICATION.md` section 17.
 
 | Contract | Address | State | Notes |
 |---|---|---|---|

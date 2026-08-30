@@ -350,3 +350,65 @@ against them, the page states the funding requirement before a user tries, and
 golden journey 02 skips with the specific reason rather than passing on a
 technicality. None of that is the same as having seen a session granted, and
 the submission document says so.
+
+## 17. What the rest of the on chain plan costs (30 August 2026)
+
+`docs/SUBMISSION.md` used to quote a single number for this with nothing
+behind it, and the number was wrong. Every figure below was measured on the
+date above and says which method produced it.
+
+Chain conditions at the time of measurement: BSC mainnet block 118,971,189,
+`eth_gasPrice` 50,000,000 wei, which is 0.05 gwei. The deployer
+`0xFC4884Ee9553a7B412C923980c1cDD7dee82cB94` holds 0 wei and 0 U.
+
+| step | transaction | gas | how it was measured |
+|---|---|---|---|
+| deploy | TrustListHook | 189,252 | `forge script Deploy --rpc-url` against mainnet, no broadcast |
+| deploy | HireRail | 2,520,666 | same run |
+| snapshot | TrustSnapshot | 1,177,953 | `forge script PublishSnapshot --rpc-url` against mainnet, no broadcast |
+| snapshot | `publish` the first root | 224,788 | same run |
+| hire | `approve` U for HireRail | 61,067 | `cast estimate` against live mainnet state |
+| hire | `hire`, Protected mode | 476,721 | `HireRailFork.t.sol` gas report, worst case of 5 calls |
+| hire | `accept` | 118,108 | same report, worst case of 3 calls |
+| | **total** | **4,768,555** | **0.000238 BNB at 0.05 gwei** |
+
+The two deploy rows and the two snapshot rows are the gas limits forge would
+actually put in the transactions. Forge sets those 30 percent above its own
+estimate, so they are what the account has to hold, not what it will spend.
+The three hire rows are execution gas with no such margin.
+
+The `hire` and `accept` rows are the two mainnet transactions from our own
+contract that SPEC section 29.2 asks for at M4. They are the two the fork
+test already runs against the real kernel, so their gas is measured against
+the live code rather than a mock.
+
+### The hire also needs the payment token, not just gas
+
+`HireRail.hire` reverts with `ZeroBudget` on a zero budget, so a demo hire
+needs a real balance of U, the kernel's settlement token
+(`0xcE24439F2D9C6a2289F741120FE202248B666666`, 18 decimals). We hold none.
+
+U is liquid on PancakeSwap. The V2 pair
+`0x108752b2A22C731edE3EdAC2205c63ae553E221a` holds 116.88 WBNB against
+81,634 U, and there are V3 pools at four fee tiers. The V2 router
+`0x10ED43C718714eb63d5aA57B78B54704E256024E` is the real one: its `factory()`
+returns `0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73` and its `WETH()` returns
+WBNB. `getAmountsOut` for 0.002 BNB quotes 1.3934 U, and `cast estimate` puts
+that swap at 144,785 gas.
+
+So one swap of 0.002 BNB buys a job budget of about 1.39 U and costs another
+0.0000072 BNB in gas.
+
+### What to fund, and why more than the total
+
+Everything above adds up to 4,913,340 gas, which is 0.000246 BNB at 0.05
+gwei, plus 0.002 BNB that turns into the job budget rather than being spent.
+
+The right ask is larger than that, for two reasons. BSC's gas price is not
+fixed and 0.05 gwei is near the floor, so a 20 times spike would put the gas
+alone at 0.0049 BNB. And the Altana session grant and revoke are not in the
+table at all: the relay charges its fee in native BNB (section 16) and we
+have never completed a grant, so there is no measured number to put there.
+
+0.01 BNB covers the measured plan with room for both. That is the number to
+fund the deployer with.
