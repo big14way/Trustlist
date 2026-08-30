@@ -91,6 +91,20 @@ DEPLOYER_KEY=$DEPLOYER_KEY forge script script/Deploy.s.sol:Deploy \
   --rpc-url $BSC_RPC_HTTP --broadcast --verify
 ```
 
+**If that command fails, read the error before running it again.** A deploy
+can broadcast successfully and still fail afterwards, while forge is waiting
+for the receipt: we hit exactly that during the fork rehearsal when the RPC
+returned 403 on the receipt fetch. The contracts were already on chain. Running
+the script again from the top in that state deploys a second set and pays for
+it twice, which is the single most expensive mistake available here.
+
+Forge tells you which case you are in. If it says `Add --resume`, use
+`--resume`, and it picks up the transactions it already sent instead of
+resending them. If you are unsure, look before you spend: the broadcast
+record at `contracts/broadcast/Deploy.s.sol/56/run-latest.json` holds the
+addresses and hashes of anything that landed, and `cast code <address>` on
+mainnet settles it.
+
 Record `HireRail` and `TrustListHook` in `docs/ADDRESSES.md`, changing their
 state from `not deployed` to `deployed`. `scripts/check_addresses.sh` asserts
 that rows marked `not deployed` have no bytecode, so the gate fails until the
@@ -206,3 +220,11 @@ panel returns the escrow to the hirer. Journey 04 covers this path.
 **The hire reverted with `DeadlineTooSoon`.** Direct jobs need at least five
 minutes of lead. Protected jobs need to outlast the live seven day dispute
 window, and the app already forces that.
+
+**A command failed and you do not know whether it spent anything.** Nothing
+here is idempotent by wishing. Check the chain before retrying: `cast balance`
+on the deployer shows whether gas was burned, `contracts/broadcast/` holds
+every transaction forge sent, and `scripts/tx_log.md` holds every one the
+scripts sent. `register_agent.sh` and `agent_deliver.sh` both re-read chain
+state before signing, so re-running them after a genuine failure is safe.
+`forge script` is the one that is not, which is what `--resume` is for.
