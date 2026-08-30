@@ -25,7 +25,7 @@ Last updated 30 August 2026.
 | Judge mode | **not done** |
 | Live deployment URL | **not done**, local only |
 | The mainnet plan rehearsed end to end on a fork | done, `scripts/mainnet_rehearsal.sh` passes: deploy, register, hire, submit, accept, escrow released |
-| Cold start test in a fresh container | script written, runs in the nightly CI job, not yet green under the spec's 5 minute budget |
+| Cold start test in a fresh container | done, 150s measured against the spec's 300s budget, nightly CI job |
 | Stranger test with three people | **not done** |
 | Zero dead ends table walked manually | done, 18 rows walked, 7 were broken and are fixed, `docs/DEAD_ENDS.md` |
 | Demo video | **not done** |
@@ -152,7 +152,7 @@ completed, so there is no measured number to enter.
 
 - **Nothing of ours is on mainnet.** The hire flow runs against a local chain with a kernel and router that enforce the same rules the live ones do, and `HireRailFork.t.sol` proves the same HireRail code works against the real deployed ERC-8183 contracts on a mainnet fork. That is strong evidence, and it is not the same thing as a mainnet transaction.
 - **`high_revocation` is published as a penalty but cannot currently fire.** There are zero revocations on the registry today. It is left in place and documented rather than removed, because removing a rule that has not yet had anything to catch would be the wrong lesson.
-- **The cold start test does not meet the spec's 5 minute budget.** A machine that has never seen the repo compiles the whole Rust workspace, which dominates the time. Shipping prebuilt binaries as a release asset would fix it and has not been done.
+- **The cold start is fast only while the prebuilt binaries are reachable.** A machine that has never seen the repo used to compile the whole Rust workspace, which was 419 of the 471 seconds it took. It now downloads binaries built for that exact commit and comes up in 150 seconds. The download is refused unless the commit matches, the published checksum matches, and each binary runs and reports the commit it was built from, so the worst case is the old behaviour rather than a wrong one. One catch: this repository is private, and a private repository serves release assets only to an authenticated caller. The cold start passes a token through for now. That has to go away when the repository is made public, which has to happen before judging anyway.
 - **The indexer runs behind head**, currently by about 1.67 percent of the registry. The audit reports the gap rather than hiding it.
 - **Judge mode does not exist yet.** It needs a prefunded relayer.
 - **The Altana session flow has never been seen to run.** The page, the scoped
