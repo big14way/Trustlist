@@ -67,23 +67,37 @@ cd /tmp/fresh
 cp .env.example .env
 sed -i "s|^BSC_RPC_HTTP=.*|BSC_RPC_HTTP=$BSC_RPC_HTTP|" .env
 
+SETUP_DONE=$SECONDS
+echo "--- toolchain ready after ${SETUP_DONE}s, starting make demo"
+
 make demo
-'
+
+# Assert in here, not on the host. make demo leaves the services running as
+# background processes of this container, and the container is torn down the
+# moment this script returns, so a check that runs afterwards is testing a
+# stack that no longer exists. The first version of this script did exactly
+# that and reported an empty homepage for a stack that had come up fine.
+echo
+echo "--- checking what a stranger would actually see"
+HOMEPAGE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/" || echo 000)
+AGENTS=$(curl -sf "http://localhost:8080/v1/stats" \
+  | python3 -c "import json,sys;print(json.load(sys.stdin).get(\"registered\",0))" 2>/dev/null || echo 0)
+echo "homepage http $HOMEPAGE, $AGENTS agents indexed"
+echo "build took $((SECONDS - SETUP_DONE))s of the ${SECONDS}s total"
+
+INNER=0
+[ "$HOMEPAGE" = "200" ] || { echo "homepage did not return 200" >&2; INNER=1; }
+[ "${AGENTS:-0}" -gt 0 ] || { echo "no agents, the seed did not load" >&2; INNER=1; }
+exit $INNER
+' && CONTAINER_STATUS=0 || CONTAINER_STATUS=$?
 
 ELAPSED=$((SECONDS - START))
 
-# The assertion is not "it exited 0", it is "a stranger sees real agents".
-HOMEPAGE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${WEB_PORT:-3000}/" || echo 000)
-AGENTS=$(curl -sf "http://localhost:${API_PORT:-8080}/v1/stats" \
-  | python3 -c "import json,sys;print(json.load(sys.stdin).get('registered',0))" 2>/dev/null || echo 0)
-
 echo
 echo "cold start took ${ELAPSED}s (budget ${BUDGET_SECS}s)"
-echo "homepage http $HOMEPAGE, $AGENTS agents indexed"
 
 FAILED=0
-[ "$HOMEPAGE" = "200" ] || { echo "homepage did not return 200" >&2; FAILED=1; }
-[ "${AGENTS:-0}" -gt 0 ] || { echo "no agents, the seed did not load" >&2; FAILED=1; }
+[ "$CONTAINER_STATUS" -eq 0 ] || { echo "the stack did not come up, see above" >&2; FAILED=1; }
 [ "$ELAPSED" -le "$BUDGET_SECS" ] || {
   echo "over the ${BUDGET_SECS}s budget: fix the setup, not this budget" >&2
   FAILED=1
