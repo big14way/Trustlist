@@ -33,11 +33,19 @@ fi
 BUDGET_SECS="${COLDSTART_BUDGET_SECS:-300}"
 START=$SECONDS
 
+# GH_TOKEN is passed through only so the prebuilt binaries can be downloaded
+# while this repository is still private. A stranger following the README has
+# no token, and does not need one: a public repository serves release assets
+# anonymously. The day this repository goes public, which it must before
+# judging, this line comes out and nothing else changes. Without a token the
+# download simply 404s and the container compiles instead, which is slower
+# but still correct.
 docker run --rm \
   --network host \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$PWD":/src:ro \
   -e "BSC_RPC_HTTP=$BSC_RPC_HTTP" \
+  -e "GH_TOKEN=${GH_TOKEN:-}" \
   ubuntu:24.04 bash -c '
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive

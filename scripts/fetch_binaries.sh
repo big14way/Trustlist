@@ -49,17 +49,60 @@ if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$SHA" ]; then
 fi
 
 ARCHIVE="trustlist-$TARGET-$SHA.tar.gz"
-BASE="https://github.com/$REPO/releases/download/binaries"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
+# Assets are fetched through the releases API rather than the plain download
+# URL, because the API is the one path that works whether the repository is
+# public or private. A private repository answers 404 to an anonymous
+# download, which looks exactly like "no binaries for this commit" and is a
+# confusing way to learn about a permissions problem.
+#
+# GH_TOKEN is used when it is set and simply not sent when it is not. Nothing
+# here requires one: a public repository serves these anonymously, which is
+# the case that matters, because a stranger following the README has no
+# token.
+API="https://api.github.com/repos/$REPO/releases"
+auth_args=()
+if [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+  auth_args=(-H "Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}")
+fi
+
 note "looking for prebuilt binaries for $SHA"
-if ! curl -fsSL --max-time 120 -o "$TMP/$ARCHIVE" "$BASE/$ARCHIVE"; then
+if ! curl -fsSL --max-time 30 "${auth_args[@]}" \
+    -H "Accept: application/vnd.github+json" \
+    -o "$TMP/release.json" "$API/tags/binaries"; then
+  note "no binaries release to read, compiling instead"
+  exit 1
+fi
+
+# One lookup, two asset ids, so a missing checksum is caught before anything
+# is downloaded.
+if ! read -r ARCHIVE_ID SUM_ID < <(python3 - "$TMP/release.json" "$ARCHIVE" <<'PY'
+import json, sys
+assets = {a["name"]: a["id"] for a in json.load(open(sys.argv[1])).get("assets", [])}
+name = sys.argv[2]
+if name not in assets:
+    sys.exit(1)
+if f"{name}.sha256" not in assets:
+    sys.exit(1)
+print(assets[name], assets[f"{name}.sha256"])
+PY
+); then
   note "none published for this commit, compiling instead"
   exit 1
 fi
-if ! curl -fsSL --max-time 30 -o "$TMP/$ARCHIVE.sha256" "$BASE/$ARCHIVE.sha256"; then
-  note "no checksum published beside the archive, refusing it"
+
+fetch_asset() {
+  curl -fsSL --max-time 120 "${auth_args[@]}" \
+    -H "Accept: application/octet-stream" -o "$2" "$API/assets/$1"
+}
+if ! fetch_asset "$ARCHIVE_ID" "$TMP/$ARCHIVE"; then
+  note "the archive would not download, compiling instead"
+  exit 1
+fi
+if ! fetch_asset "$SUM_ID" "$TMP/$ARCHIVE.sha256"; then
+  note "the checksum would not download, refusing the archive"
   exit 1
 fi
 
