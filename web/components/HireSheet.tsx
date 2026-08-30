@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {
   useAccount,
+  useBalance,
   useConnect,
   useReadContract,
   useSwitchChain,
@@ -116,6 +117,15 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
   const insufficient =
     budget !== null && balance !== undefined && balance < budget;
 
+  // Holding the payment token is not the same as being able to spend it.
+  // Without native BNB the wallet cannot broadcast anything, and the failure
+  // arrives as an opaque wallet error after the visitor has filled the form.
+  const { data: nativeBalance } = useBalance({
+    address,
+    query: { enabled: !!address },
+  });
+  const noGas = nativeBalance !== undefined && nativeBalance.value === 0n;
+
   const { writeContractAsync } = useWriteContract();
   const [hireHash, setHireHash] = useState<`0x${string}` | undefined>();
   const chainTime = useChainTime();
@@ -150,6 +160,52 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
       // it just cannot self recover after a refresh.
     }
   }, [hireHash, agentId, spec]);
+
+  // Read it back. Without this the write above was decoration: a refresh
+  // between signing and confirmation left the visitor with a transaction in
+  // flight and nothing in our UI pointing at it.
+  //
+  // Only a recent intent is restored. An hour is far longer than any BSC
+  // confirmation, so anything older is a hash the reader has long since seen
+  // resolve, and re-opening the sheet on it would be confusing rather than
+  // helpful.
+  const [recovered, setRecovered] = useState(false);
+  useEffect(() => {
+    if (recovered || hireHash) return;
+    setRecovered(true);
+    try {
+      const raw = localStorage.getItem(`trustlist:hire:${agentId}`);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        hash?: string;
+        spec?: string;
+        at?: number;
+      };
+      const age = Date.now() - (saved.at ?? 0);
+      if (!saved.hash || !/^0x[0-9a-fA-F]{64}$/.test(saved.hash)) return;
+      if (age > 3_600_000) {
+        localStorage.removeItem(`trustlist:hire:${agentId}`);
+        return;
+      }
+      if (saved.spec) setSpec(saved.spec);
+      setHireHash(saved.hash as `0x${string}`);
+      setStep("hiring");
+    } catch {
+      // A malformed or unreadable entry is not worth interrupting anyone
+      // over: the sheet simply opens on a fresh form.
+    }
+  }, [recovered, hireHash, agentId]);
+
+  // Once the chain has answered, the intent has done its job. Leaving it
+  // behind would make the next visit to this agent reopen a finished job.
+  useEffect(() => {
+    if (!receipt.isSuccess && !receipt.isError) return;
+    try {
+      localStorage.removeItem(`trustlist:hire:${agentId}`);
+    } catch {
+      // Nothing to do: the entry expires on age anyway.
+    }
+  }, [receipt.isSuccess, receipt.isError, agentId]);
 
   async function onConfirm() {
     setErrorText(null);
@@ -386,6 +442,15 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
               </p>
             </Row>
 
+            {noGas ? (
+              <p className="mt-4 rounded border border-flag/50 p-2 text-sm text-flag">
+                This wallet holds no BNB, so it cannot pay the gas for any
+                transaction, whatever its {tokenSymbol} balance. Send it a
+                little BNB and come back. A hire costs about 0.00004 BNB at
+                current gas.
+              </p>
+            ) : null}
+
             {errorText ? (
               <p className="mt-4 rounded border border-flag/50 p-2 text-sm text-flag">
                 {errorText}
@@ -429,7 +494,9 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
               ) : (
                 <button
                   onClick={onConfirm}
-                  disabled={step !== "form" || budget === null || insufficient}
+                  disabled={
+                    step !== "form" || budget === null || insufficient || noGas
+                  }
                   className="w-full rounded bg-ink px-4 py-2 text-paper disabled:opacity-60"
                 >
                   {step === "approving"

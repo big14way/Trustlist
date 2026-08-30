@@ -16,18 +16,18 @@ Last updated 30 August 2026.
 | `scripts/audit_data.sh` run, table pasted below | done, 10 passed, 0 failed, 1 skipped |
 | `make verify` passes | done |
 | Contract line coverage on `contracts/src` | 100 percent |
-| Golden journeys | all 5 written, 4 pass, journey 02 skips (Altana relay unreachable and wallet unfunded) |
+| Golden journeys | all 5 written, 4 pass, journey 02 skips because the Altana wallet is unfunded |
 | Contracts deployed to BSC mainnet | **not done**, waiting on funding |
 | Contracts verified on BscScan | **not done**, follows deployment |
 | Two mainnet transactions inside the window | **not done**, waiting on funding |
-| Altana session and revoke hashes | **not done**, page and scoped permissions built, grant needs funds and a reachable relay |
+| Altana session and revoke hashes | **not done**, page and scoped permissions built, the relay is answering again, the grant needs BNB |
 | `docs/ADVANTAGE_REPORT.md` with three real tasks | **not done** |
 | Judge mode | **not done** |
 | Live deployment URL | **not done**, local only |
 | The mainnet plan rehearsed end to end on a fork | done, `scripts/mainnet_rehearsal.sh` passes: deploy, register, hire, submit, accept, escrow released |
 | Cold start test in a fresh container | script written, runs in the nightly CI job, not yet green under the spec's 5 minute budget |
 | Stranger test with three people | **not done** |
-| Zero dead ends table walked manually | **not done** |
+| Zero dead ends table walked manually | done, 18 rows walked, 7 were broken and are fixed, `docs/DEAD_ENDS.md` |
 | Demo video | **not done** |
 
 The single blocker behind most of the "not done" rows is that the deployer account holds no BNB. The remaining on chain plan costs 0.00033 BNB in gas at the 0.05 gwei the chain is charging today, plus 0.002 BNB that becomes a job budget and comes back when the job settles. The ask is 0.01 BNB, and the funding note below says why it is larger than the total. The whole plan has been rehearsed against a fork of mainnet, so the numbers are gas burned rather than gas guessed.
@@ -98,7 +98,7 @@ Run with `make e2e` against a local chain.
 | Journey | State |
 |---|---|
 | 01 discover and hire | passes, 15.9s |
-| 02 session cap and revoke | written, skips with a stated reason: the Altana relay is not answering and the wallet is unfunded |
+| 02 session cap and revoke | written, runs further than before now that the relay is answering, and skips with a stated reason: the wallet holds no BNB, so no grant can be signed |
 | 03 verify a score | passes, 1.5s |
 | 04 reclaim an expired job | passes, 10.1s |
 | 05 cold first visit, no wallet | passes, 4.6s |
@@ -157,10 +157,10 @@ completed, so there is no measured number to enter.
 - **Judge mode does not exist yet.** It needs a prefunded relayer.
 - **The Altana session flow has never been seen to run.** The page, the scoped
   permissions, and the revoke path are written against the SDK's 0.8.0 types
-  and type check against them, but two things stopped a live grant: the wallet
-  needs native BNB, because the relay accepts no other fee token on any of its
-  four chains, and the relay stopped answering from this machine partway
-  through the build. GitHub became unreachable in the same window while other
-  hosts stayed fine, so the second one is probably a local routing problem
-  rather than anything about Altana. Both are recorded with their evidence in
-  `docs/VERIFICATION.md` section 16.
+  and type check against them. Two things stopped a live grant, and one of
+  them has since cleared. The relay is answering again as of 30 August 2026,
+  which removes the outage recorded in `docs/VERIFICATION.md` section 16. What
+  remains is funding: the relay accepts no fee token but the native coin on
+  any of its four chains, so a grant needs BNB. Journey 02 now runs as far as
+  that wall and skips there, having first checked that the page tells the
+  reader why.

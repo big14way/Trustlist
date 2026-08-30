@@ -3,10 +3,10 @@ import { HireButton } from "@/components/HireButton";
 import { ProbeStrip } from "@/components/ProbeStrip";
 import { VerifyDrawer } from "@/components/VerifyDrawer";
 import {
-  fetchAgent,
   fetchAgentEndpoints,
   fetchAgentReviews,
   fetchAgentUptime,
+  fetchAgentResult,
 } from "@/lib/api-server";
 import type { AgentCard, EndpointState, Review, Reviews } from "@/lib/api";
 
@@ -218,8 +218,50 @@ export default async function AgentDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const agent = await fetchAgent(id);
-  if (!agent) notFound();
+  const found = await fetchAgentResult(id);
+  if (!found.ok) {
+    // A registry with 300,000 agents in it does not stop having agent 1
+    // because our API is down, and saying so would be a lie the reader
+    // cannot check.
+    if (found.reason === "missing") notFound();
+    return (
+      <main className="mx-auto max-w-[900px] px-8 py-16">
+        <p className="eyebrow text-flag">API NOT ANSWERING</p>
+        <h1 className="font-display mt-3 text-4xl">
+          We cannot read this agent right now.
+        </h1>
+        <p className="mt-4 max-w-xl text-sm text-ink/80">
+          Our API did not respond, so we have nothing to show for agent {id}.
+          That is a fact about us, not about the agent: with our API down we
+          cannot even tell you whether this id exists. The registry can, and
+          the link below asks it directly.
+        </p>
+        <nav className="mt-6 flex flex-wrap gap-3">
+          <a
+            href={`/agents/${id}`}
+            className="rounded bg-ink px-4 py-2 text-sm text-paper hover:opacity-90"
+          >
+            Try again
+          </a>
+          <a
+            href={`https://8004scan.io/agents/bsc/${id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded border border-dormant/50 px-4 py-2 text-sm hover:border-ink"
+          >
+            Look it up on 8004scan
+          </a>
+          <a
+            href="/"
+            className="rounded border border-dormant/50 px-4 py-2 text-sm hover:border-ink"
+          >
+            Back to the marketplace
+          </a>
+        </nav>
+      </main>
+    );
+  }
+  const agent = found.data;
 
   const [uptime, endpoints, reviews] = await Promise.all([
     fetchAgentUptime(id),

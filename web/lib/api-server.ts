@@ -1,6 +1,8 @@
 import { cache } from "react";
 import {
   apiGet,
+  apiGetResult,
+  type Fetched,
   type AgentCard,
   type AgentList,
   type EndpointState,
@@ -40,6 +42,13 @@ export function fetchUptime(ids: string[]): Promise<UptimeMap | null> {
 
 export function fetchAgent(id: string): Promise<AgentCard | null> {
   return get<AgentCard>(`/v1/agents/${encodeURIComponent(id)}`);
+}
+
+// The agent page is the one place where the difference between a missing
+// agent and an unreachable API changes what the reader is told, so it does
+// not share the snapshot cache above.
+export function fetchAgentResult(id: string): Promise<Fetched<AgentCard>> {
+  return apiGetResult<AgentCard>(`/v1/agents/${encodeURIComponent(id)}`);
 }
 
 export function fetchAgentUptime(id: string): Promise<UptimeBuckets | null> {

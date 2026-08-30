@@ -58,14 +58,58 @@ function Bar({
 export default async function StatsPage() {
   const stats = await fetchStats();
 
-  if (!stats || !stats.measured) {
+  // These two look the same on screen and are not the same thing. Saying
+  // "nothing has been measured" when our API is simply unreachable blames
+  // our own data for someone else's outage, and a reader cannot tell the
+  // difference unless we do.
+  if (!stats) {
     return (
       <main className="mx-auto max-w-[900px] px-8 py-16">
         <h1 className="font-display text-4xl">Registry health</h1>
-        <p className="mt-4 text-sm text-ink/80">
+        <p className="mt-4 max-w-xl text-sm text-flag">
+          Our API is not answering, so this page has nothing to read. The
+          measurements themselves are unaffected: they live in the database and
+          this page will fill in again as soon as the API is back.
+        </p>
+        <nav className="mt-6 flex flex-wrap gap-3">
+          <a
+            href="/stats"
+            className="rounded bg-ink px-4 py-2 text-sm text-paper hover:opacity-90"
+          >
+            Try again
+          </a>
+          <a
+            href="/"
+            className="rounded border border-dormant/50 px-4 py-2 text-sm hover:border-ink"
+          >
+            Back to the marketplace
+          </a>
+        </nav>
+      </main>
+    );
+  }
+
+  if (!stats.measured) {
+    return (
+      <main className="mx-auto max-w-[900px] px-8 py-16">
+        <h1 className="font-display text-4xl">Registry health</h1>
+        <p className="mt-4 max-w-xl text-sm text-ink/80">
           Nothing has been measured yet, so there is nothing to report. We would
           rather show you this than a page of zeroes.
         </p>
+        <p className="mt-3 max-w-xl text-sm text-ink/70">
+          The prober scores an agent once it has enough probes to judge fairly,
+          so this page fills in after the first full pass rather than
+          immediately.
+        </p>
+        <nav className="mt-6">
+          <a
+            href="/"
+            className="rounded border border-dormant/50 px-4 py-2 text-sm hover:border-ink"
+          >
+            Back to the marketplace
+          </a>
+        </nav>
       </main>
     );
   }

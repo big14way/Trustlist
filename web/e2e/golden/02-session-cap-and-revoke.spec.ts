@@ -111,7 +111,12 @@ test.describe("session cap and revoke", () => {
       ).toBeVisible();
 
       await sessions.getByRole("button", { name: "Grant this session" }).click();
-      const alert = page.getByRole("alert");
+      // Scoped to the sessions region on purpose. Next renders its own
+      // permanently empty role="alert" route announcer on every page, so an
+      // unscoped alert lookup matches two elements and fails strict mode
+      // before it ever reads ours. This branch had never run until the relay
+      // came back, which is why the bug survived.
+      const alert = sessions.getByRole("alert");
       await expect(alert).toBeVisible({ timeout: 60_000 });
       await expect(alert).toContainText(/no BNB|native token/i);
 

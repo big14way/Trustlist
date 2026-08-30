@@ -67,14 +67,41 @@ export type UptimeMap = Record<
   { hour: string; ok_share: number | null; probes: number }[]
 >;
 
+// Every external call gets a timeout. Without one, an API that accepts the
+// connection and then stalls holds the page render open until the platform
+// gives up, which reads to a visitor as a site that hangs rather than a site
+// whose API is down. Eight seconds is well past our slowest measured
+// endpoint and well inside anyone's patience.
+const TIMEOUT_MS = 8000;
+
 export async function apiGet<T>(path: string): Promise<T | null> {
+  const r = await apiGetResult<T>(path);
+  return r.ok ? r.data : null;
+}
+
+/// "We could not find it" and "we could not ask" are different answers, and
+/// a page that collapses them tells the reader the wrong thing: a missing
+/// agent page shown during an outage claims an agent does not exist when it
+/// does. Callers that show one of those states use this instead of apiGet.
+export type Fetched<T> =
+  | { ok: true; data: T }
+  | { ok: false; reason: "missing" | "unreachable" };
+
+export async function apiGetResult<T>(path: string): Promise<Fetched<T>> {
   try {
-    const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
+    const res = await fetch(`${API_URL}${path}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (res.status === 404) return { ok: false, reason: "missing" };
+    if (!res.ok) {
+      console.error(`API returned ${res.status} for ${path}`);
+      return { ok: false, reason: "unreachable" };
+    }
+    return { ok: true, data: (await res.json()) as T };
   } catch (e) {
     console.error(`API fetch failed for ${path}`, e);
-    return null;
+    return { ok: false, reason: "unreachable" };
   }
 }
 

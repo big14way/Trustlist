@@ -18,6 +18,7 @@ function StatusPill({ status }: { status: AgentCard["status"] }) {
   };
   return (
     <span
+      data-status-pill={status}
       className={`eyebrow inline-block rounded px-1.5 py-0.5 ${styles[status]}`}
     >
       {status}
@@ -78,6 +79,16 @@ const CATEGORIES = [
   { id: "pancakeswap", label: "PancakeSwap" },
 ];
 
+// The marketplace has exactly two filters, and both the rail and the empty
+// state need to build links out of them.
+function href(c: string, d: boolean): string {
+  const p = new URLSearchParams();
+  if (c) p.set("category", c);
+  if (d) p.set("dormant", "1");
+  const qs = p.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
 function FilterRail({
   category,
   showDormant,
@@ -87,13 +98,6 @@ function FilterRail({
   showDormant: boolean;
   dormantCount: number;
 }) {
-  const href = (c: string, d: boolean) => {
-    const p = new URLSearchParams();
-    if (c) p.set("category", c);
-    if (d) p.set("dormant", "1");
-    const qs = p.toString();
-    return qs ? `/?${qs}` : "/";
-  };
   return (
     <div className="mt-6">
       <ul className="flex flex-wrap gap-2">
@@ -150,6 +154,7 @@ export default async function Home({
 
   const measured = stats?.measured === true;
   const answering = measured && stats ? stats.live + stats.flaky : 0;
+  const dormantCount = stats ? stats.down + stats.measuring : 0;
 
   return (
     <main className="mx-auto max-w-[1200px] px-8 py-16">
@@ -214,7 +219,7 @@ export default async function Home({
       <FilterRail
         category={category}
         showDormant={showDormant}
-        dormantCount={stats ? stats.down + stats.measuring : 0}
+        dormantCount={dormantCount}
       />
 
       <section aria-label="Agents" className="mt-8">
@@ -231,11 +236,47 @@ export default async function Home({
             ))}
           </ul>
         ) : (
-          <p className="mt-4 max-w-xl text-sm text-ink/70">
-            {category
-              ? `No agent in this category is answering right now. Try another category, or show the agents that never answer to see who claimed the label without backing it up.`
-              : "Nothing to show yet. The prober is measuring; reload in a minute."}
-          </p>
+          <div data-testid="empty-state" className="mt-4 max-w-xl">
+            <p className="text-sm text-ink/70">
+              {category
+                ? "No agent in this category is answering right now."
+                : showDormant
+                  ? "Every agent we have measured is answering, so there is nothing in this view."
+                  : "Nothing to show yet. The prober is still measuring."}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {category ? (
+                <a
+                  href={href("", showDormant)}
+                  className="rounded bg-ink px-3 py-1.5 text-sm text-paper hover:opacity-90"
+                >
+                  Show every category
+                </a>
+              ) : null}
+              {!showDormant && dormantCount > 0 ? (
+                <a
+                  href={href(category, true)}
+                  className="rounded border border-dormant/50 px-3 py-1.5 text-sm hover:border-ink"
+                >
+                  Show the {dormantCount.toLocaleString()} that do not answer
+                </a>
+              ) : null}
+              {showDormant ? (
+                <a
+                  href={href(category, false)}
+                  className="rounded border border-dormant/50 px-3 py-1.5 text-sm hover:border-ink"
+                >
+                  Back to the agents that answer
+                </a>
+              ) : null}
+              <a
+                href="/stats"
+                className="rounded border border-dormant/50 px-3 py-1.5 text-sm hover:border-ink"
+              >
+                See what we have measured
+              </a>
+            </div>
+          </div>
         )}
       </section>
 
@@ -263,9 +304,9 @@ export default async function Home({
           </a>
         </nav>
         <p className="font-data text-xs text-dormant">
-          M2: probing and liveness. Trust scoring and hiring arrive in the
-          milestones behind this page. Every number and every probe cell above
-          is a database read from our own instruments.
+          Every number and every probe cell above is a database read from our
+          own instruments. Nothing here is sampled, estimated, or carried over
+          from a previous run.
         </p>
       </footer>
     </main>
