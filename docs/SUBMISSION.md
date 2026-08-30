@@ -24,12 +24,13 @@ Last updated 30 August 2026.
 | `docs/ADVANTAGE_REPORT.md` with three real tasks | **not done** |
 | Judge mode | **not done** |
 | Live deployment URL | **not done**, local only |
+| The mainnet plan rehearsed end to end on a fork | done, `scripts/mainnet_rehearsal.sh` passes: deploy, register, hire, submit, accept, escrow released |
 | Cold start test in a fresh container | script written, runs in the nightly CI job, not yet green under the spec's 5 minute budget |
 | Stranger test with three people | **not done** |
 | Zero dead ends table walked manually | **not done** |
 | Demo video | **not done** |
 
-The single blocker behind most of the "not done" rows is that the deployer account holds no BNB. The remaining on chain plan costs 0.000246 BNB in gas at the 0.05 gwei the chain is charging today, plus 0.002 BNB that becomes a job budget rather than being spent. The ask is 0.01 BNB, and the funding note below says why it is larger than the total.
+The single blocker behind most of the "not done" rows is that the deployer account holds no BNB. The remaining on chain plan costs 0.00033 BNB in gas at the 0.05 gwei the chain is charging today, plus 0.002 BNB that becomes a job budget and comes back when the job settles. The ask is 0.01 BNB, and the funding note below says why it is larger than the total. The whole plan has been rehearsed against a fork of mainnet, so the numbers are gas burned rather than gas guessed.
 
 ## The data honesty audit
 
@@ -106,38 +107,46 @@ Journey 01 prints its own discover-to-hired timing, which was 3.1 seconds on the
 
 ## The funding note
 
-Every row in this section was measured on 30 August 2026, at BSC mainnet
-block 118,971,189 with `eth_gasPrice` at 0.05 gwei. The method for each one
-is in `docs/VERIFICATION.md` section 17. The deployer,
+Every row below was measured on 30 August 2026, with BSC charging 0.05 gwei.
+The rows marked "rehearsal" are gas actually burned by
+`scripts/mainnet_rehearsal.sh`, which runs the entire plan against a fork of
+mainnet using the real registry, the real kernel, the real router and the
+real payment token. The method for each row is in `docs/VERIFICATION.md`
+sections 17 and 18. The deployer,
 `0xFC4884Ee9553a7B412C923980c1cDD7dee82cB94`, holds 0 wei and 0 U.
 
-| step | transaction | gas |
-|---|---|---|
-| deploy | TrustListHook | 189,252 |
-| deploy | HireRail | 2,520,666 |
-| snapshot | TrustSnapshot | 1,177,953 |
-| snapshot | publish the first root | 224,788 |
-| hire | approve U for HireRail | 61,067 |
-| hire | `hire`, Protected mode | 476,721 |
-| hire | `accept` | 118,108 |
-| budget | swap 0.002 BNB into U on PancakeSwap | 144,785 |
-| | total | 4,913,340, which is 0.000246 BNB |
+| step | transaction | gas | source |
+|---|---|---|---|
+| deploy | TrustListHook | 189,252 | forge estimate |
+| deploy | HireRail | 2,520,666 | forge estimate |
+| snapshot | TrustSnapshot | 1,177,953 | forge estimate |
+| snapshot | publish the first root | 224,788 | forge estimate |
+| setup | register our agent | 180,164 | rehearsal |
+| setup | swap 0.002 BNB into U | 144,785 | `cast estimate` |
+| demo | approve U | 60,245 | rehearsal |
+| demo | `hire` | 471,090 | rehearsal |
+| demo | `submit` | 93,412 | rehearsal |
+| demo | `accept` | 118,108 | rehearsal |
 
-The `hire` and `accept` rows are the two mainnet transactions from our own
-contract that the spec asks for. Their gas comes from `HireRailFork.t.sol`,
-which runs them against the real ERC-8183 kernel on a fork, so these are not
-mock numbers.
+One complete hire is 742,855 gas, which is 0.0000371 BNB. Deploying
+everything and running the hire three times is 6,666,173 gas, or 0.00033 BNB.
 
-The swap is there because `HireRail.hire` rejects a zero budget, so a real
-hire needs a real balance of U, the kernel's settlement token. We hold none.
-0.002 BNB buys about 1.39 U at today's pool price.
+The only real money is the job budget: 0.002 BNB buys about 1.39 U. The
+rehearsal asserts the provider is paid in full with no fee taken, so hiring
+our own agent returns the U every time and one purchase covers every run.
 
-Ask for 0.01 BNB rather than 0.00025. Two things are not covered by the
-total. BSC's gas price is near its floor right now, and a 20 times spike
-would put the gas alone at 0.0049 BNB. And the Altana session grant and
-revoke are missing from the table entirely, because the relay charges its fee
-in native BNB and we have never completed a grant, so there is no measured
-number to enter.
+The `submit` row is the one that changed the plan. `accept` releases escrow
+and the kernel will not complete a job that was never submitted, but
+submitting is the provider's signature and the web app has no path for it,
+correctly: it is the agent's side of the deal. Our e2e suite impersonates the
+provider on a dev chain, which mainnet does not allow. So a mainnet hire can
+only reach a payout against an agent whose owner key we hold, which makes
+registering one of our own a prerequisite rather than a nice to have.
+
+Ask for 0.01 BNB rather than 0.0004. BSC's gas price is near its floor, and
+the Altana session grant and revoke are missing from the table entirely,
+because the relay charges its fee in native BNB and no grant has ever
+completed, so there is no measured number to enter.
 
 ## Known gaps, stated plainly
 

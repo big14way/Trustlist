@@ -412,3 +412,88 @@ have never completed a grant, so there is no measured number to put there.
 
 0.01 BNB covers the measured plan with room for both. That is the number to
 fund the deployer with.
+
+## 18. The whole mainnet plan, rehearsed on a fork (30 August 2026)
+
+Section 17 costed the plan from estimates. This ran it. `scripts/mainnet_rehearsal.sh`
+forks BSC mainnet, hands two accounts some BNB, and then does the real thing
+against the real contracts: the real ERC-8004 Identity Registry, the real
+ERC-8183 kernel, the real PancakeSwap V2 router, the real payment token. Only
+the chain is a copy.
+
+Rehearsed at block 118,978,591. It deployed TrustListHook and HireRail,
+registered Yield Scout as agent 319397 owned by our deployer, swapped 0.002
+BNB into 1.3934 U, approved and hired for a budget of 1 U, submitted the
+delivery as the provider, and accepted. It then asserted that the provider
+received exactly 1 U and that the rail was left holding nothing, which is the
+same pair of assertions `HireRailFork.t.sol` makes.
+
+Gas actually burned, as opposed to estimated:
+
+| transaction | gas |
+|---|---|
+| register the agent | 180,164 |
+| approve U | 60,245 |
+| `hire`, Direct mode | 471,090 |
+| `submit`, signed by the provider | 93,412 |
+| `accept` | 118,108 |
+| one hire, end to end | 742,855 |
+
+At 0.05 gwei one complete hire costs 0.0000371 BNB. Deploying everything and
+running the hire three times is 6,666,173 gas, or 0.00033 BNB.
+
+Two of these were wrong in section 17. `hire` was costed at 476,721 from the
+fork test's gas report, which counts execution only; a real transaction with
+a real job description costs 471,090 all in. `submit` was not costed at all,
+because until the rehearsal we had not noticed that a mainnet hire cannot
+complete without it.
+
+### The finding that matters: nothing could have submitted
+
+`accept` releases escrow, and the kernel will not complete a job that was
+never submitted. Submitting is the provider's signature, and the web app has
+no path for it, correctly: it is the agent's side of the deal, not the
+hirer's. The e2e suite gets around this with `anvil_impersonateAccount`,
+which exists only on a dev chain.
+
+So a mainnet hire can only be carried to a payout against an agent whose
+owner key we hold. Every agent already in the registry belongs to a stranger.
+Registering one of our own is therefore not just the PancakeSwap deliverable,
+it is a prerequisite for any completed hire. `scripts/register_agent.sh` and
+`scripts/agent_deliver.sh` exist because of this, and the runbook is in
+`docs/MAINNET_RUNBOOK.md`.
+
+### Forking mainnet needs an archive rpc, and most free ones are not
+
+anvil pins a block and keeps reading state at that block while the real chain
+moves on, so within seconds every read is an archive request. Measured the
+same day, asking each endpoint for an account balance at increasing depth:
+
+| endpoint | state 20 back | 200 | 1,000 | 50,000 |
+|---|---|---|---|---|
+| bsc-rpc.publicnode.com | yes | no | no | no |
+| bsc-dataseed.bnbchain.org | yes | no | no | no |
+| bsc.blockrazor.xyz | yes | no | no | no |
+| 1rpc.io/bnb | yes | no | no | no |
+| bsc-dataseed1.defibit.io | yes | no | no | no |
+| bsc.meowrpc.com | yes | no | no | no |
+| bsc.rpc.blxrbdn.com | no, "not supported" | no | no | no |
+| bsc-mainnet.public.blastapi.io | yes | yes | yes | yes |
+| bsc.drpc.org | yes | yes | yes | yes |
+
+bloXroute is the surprise: section 10 recommends it because it serves archive
+`eth_getLogs`, and it does, but it answers "not supported" to an archive
+state read. The two that work are what the rehearsal picks from, and it
+checks before starting rather than failing partway through with a wall of
+403s.
+
+### The relay is answering again
+
+Section 16 recorded every Altana host timing out. On 30 August 2026
+`relay.altana.network` and `testnet-relay.altana.network` both answer (405 to
+a GET, which is what a JSON-RPC endpoint should say), `docs.altana.network`
+returns 200, and `wallet_getCapabilities` returns the full contract and fee
+manifest. The fee finding from section 16 still holds: on BSC the only fee
+token listed is the zero address, the native coin, at a 1:1 native rate with
+zero gas buffers. So the session grant still needs BNB, and its cost is still
+unmeasured because no grant has been completed.
