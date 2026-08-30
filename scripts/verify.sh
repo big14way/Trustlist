@@ -13,12 +13,10 @@ MILESTONE=$(cat .milestone 2>/dev/null || echo 0)
 # The runtime checks talk to the same services and contracts the app does, so
 # they read the same environment. Without this a check that depends on an
 # address quietly skips instead of running, which is worse than failing.
-set -a
+# scripts/env.sh explains why these files are not simply sourced.
 # shellcheck disable=SC1091
-[ -f .env.example ] && source .env.example
-# shellcheck disable=SC1091
-[ -f .env ] && source .env
-set +a
+source scripts/env.sh
+load_env_files
 
 # psql may not exist on the host; fall back to the compose container.
 run_sql() {

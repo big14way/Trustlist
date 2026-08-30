@@ -98,6 +98,7 @@ Being precise about this matters more than sounding impressive.
 - **Local**: the hire flow currently runs against a local dev chain (anvil) with a kernel and router that enforce the same rules the live ones do. `HireRailFork.t.sol` proves the same HireRail code works against the real deployed mainnet contracts on a fork.
 - **Not yet on mainnet**: HireRail and TrustSnapshot are deployed and exercised locally, not on BSC mainnet. See the status section.
 - **Self-deployed registries** exist only in CI and the e2e suite, where synthetic data is the correct thing to have. The product never reads from them.
+- **What the green badge means**: every push loads a seed of real indexed rows, stands up a local chain, runs the trust engine once, deploys `TrustSnapshot`, publishes the root, and then checks that the root and a Merkle proof the API serves both match the chain. That proves the snapshot pipeline end to end. It is not a mainnet publish, and it does not claim to be one.
 
 ## Where the numbers come from
 

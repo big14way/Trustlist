@@ -146,38 +146,78 @@ on conflict (id) do update set
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     common::init_tracing("trust");
+    // `--once` runs a single pass and exits with the pass result. CI uses it
+    // to build a real snapshot from the seed before publishing it, so the
+    // snapshot pipeline is proved on every push instead of on one laptop.
+    let once = std::env::args().any(|a| a == "--once");
     let config = Config::from_env()?;
     let pool = common::connect_and_migrate(&config.database_url).await?;
 
     loop {
-        // Trust first: the scoring pass reads agent_trust, so computing it
-        // afterwards would score every agent against the previous run.
-        match run_trust(&pool).await {
-            Ok((reviewers, agents)) => {
-                tracing::info!(reviewers, agents, "trust pass complete")
-            }
-            Err(e) => tracing::error!(%e, "trust pass failed"),
+        let result = one_pass(&pool).await;
+        if once {
+            return result;
         }
-        match run_categories(&pool).await {
-            Ok(rows) => tracing::info!(rows, "categories assigned"),
-            Err(e) => tracing::error!(%e, "category pass failed"),
-        }
-        match run_scoring(&pool).await {
-            Ok(rows) => tracing::info!(rows, "scoring pass complete"),
-            Err(e) => tracing::error!(%e, "scoring pass failed"),
-        }
-        match refresh_stats(&pool).await {
-            Ok(()) => tracing::info!("registry snapshot refreshed"),
-            Err(e) => tracing::error!(%e, "registry snapshot failed"),
-        }
-        match build_snapshot(&pool).await {
-            Ok(Some((id, root, count))) => {
-                tracing::info!(id, %root, agents = count, "merkle snapshot built")
-            }
-            Ok(None) => tracing::info!("no measured agents yet, no snapshot built"),
-            Err(e) => tracing::error!(%e, "snapshot build failed"),
+        if let Err(e) = result {
+            tracing::error!(%e, "pass finished with failures, retrying next cycle");
         }
         tokio::time::sleep(Duration::from_secs(1800)).await;
+    }
+}
+
+/// One full pass over the registry. Every stage runs even when an earlier one
+/// fails, because a broken trust pass should not stop scoring forever, but
+/// the failures are collected and returned so a single run can exit non zero.
+async fn one_pass(pool: &PgPool) -> anyhow::Result<()> {
+    let mut failures: Vec<String> = Vec::new();
+
+    // Trust first: the scoring pass reads agent_trust, so computing it
+    // afterwards would score every agent against the previous run.
+    match run_trust(pool).await {
+        Ok((reviewers, agents)) => {
+            tracing::info!(reviewers, agents, "trust pass complete")
+        }
+        Err(e) => {
+            tracing::error!(%e, "trust pass failed");
+            failures.push(format!("trust pass: {e}"));
+        }
+    }
+    match run_categories(pool).await {
+        Ok(rows) => tracing::info!(rows, "categories assigned"),
+        Err(e) => {
+            tracing::error!(%e, "category pass failed");
+            failures.push(format!("category pass: {e}"));
+        }
+    }
+    match run_scoring(pool).await {
+        Ok(rows) => tracing::info!(rows, "scoring pass complete"),
+        Err(e) => {
+            tracing::error!(%e, "scoring pass failed");
+            failures.push(format!("scoring pass: {e}"));
+        }
+    }
+    match refresh_stats(pool).await {
+        Ok(()) => tracing::info!("registry snapshot refreshed"),
+        Err(e) => {
+            tracing::error!(%e, "registry snapshot failed");
+            failures.push(format!("registry snapshot: {e}"));
+        }
+    }
+    match build_snapshot(pool).await {
+        Ok(Some((id, root, count))) => {
+            tracing::info!(id, %root, agents = count, "merkle snapshot built")
+        }
+        Ok(None) => tracing::info!("no measured agents yet, no snapshot built"),
+        Err(e) => {
+            tracing::error!(%e, "snapshot build failed");
+            failures.push(format!("snapshot build: {e}"));
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("{}", failures.join("; "))
     }
 }
 

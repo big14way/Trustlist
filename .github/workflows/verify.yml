@@ -51,6 +51,12 @@ jobs:
           curl -sf http://localhost:8080/v1/health
       - name: Load the seed (real indexed rows, bounded sample)
         run: bash scripts/load_seed.sh
+      # Without this the M6 snapshot checks in the gate had never run on a
+      # push: CI had no snapshot and no chain, so both endpoints 404ed and
+      # the root comparison was skipped. anvil plus one trust pass makes the
+      # whole pipeline, build to publish to serve to verify, run every time.
+      - name: Publish a snapshot on a local chain
+        run: bash scripts/ci_snapshot.sh
       - name: Build and start the web app
         run: |
           cd web
@@ -60,8 +66,9 @@ jobs:
             curl -sf -o /dev/null http://localhost:3000/ && break; sleep 2
           done
           curl -sf -o /dev/null http://localhost:3000/
+      # TRUST_SNAPSHOT and HIRE_RAIL_RPC come from the snapshot step through
+      # GITHUB_ENV. verify.sh no longer sources the env files, so those
+      # values survive instead of being blanked by the empty placeholders in
+      # .env.example.
       - name: Run the gate
-        run: |
-          set -a && source .env.example && set +a
-          export DATABASE_URL=postgres://trustlist:trustlist@localhost:5432/trustlist
-          bash scripts/verify.sh
+        run: bash scripts/verify.sh
