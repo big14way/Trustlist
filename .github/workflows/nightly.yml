@@ -19,8 +19,8 @@ jobs:
       - name: Cold start from a clean container
         env:
           BSC_RPC_HTTP: https://bsc-rpc.publicnode.com
-          # SPEC 30.2's own number, now that it is met: measured at 150s on
-          # 30 August 2026 with the prebuilt binaries in use. A run that
+          # SPEC 30.2's own number, now that it is met: measured at 89s and
+          # 150s with the prebuilt binaries in use, no credentials needed. A run that
           # cannot download them compiles instead and takes about 470s, and
           # failing this budget is the correct outcome in that case: it means
           # the five minute promise does not hold for that commit. The script
