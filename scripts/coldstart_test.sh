@@ -53,6 +53,12 @@ curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolch
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1
 apt-get install -qq -y nodejs >/dev/null
 
+# The repo is bind mounted from the host and owned by the host user, so git
+# inside the container sees a different uid and refuses to touch it. Marking
+# it safe is about the container boundary, not about trusting the contents.
+git config --global --add safe.directory /src
+git config --global --add safe.directory /src/.git
+
 git clone -q /src /tmp/fresh
 cd /tmp/fresh
 cp .env.example .env
