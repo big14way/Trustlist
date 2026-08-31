@@ -1,0 +1,49 @@
+name: uptime
+
+# SPEC Section 30.7 asks for an uptime monitor on /v1/health through judging.
+# It does a second job here: the API runs on a free Render instance, which
+# spins down when idle and answers 404 with x-render-routing: no-server for
+# most of a minute while it comes back. A judge who arrives at a cold URL
+# sees a broken site. Pinging keeps it awake and records whether it was.
+#
+# This is a mitigation, not a fix. A free instance still drops requests while
+# warm: measured 8 of 12 over one minute on 31 August 2026. The honest fix is
+# a paid instance for the judging window, and docs/HOSTING.md says so.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ping the API and the agents until they answer
+        run: |
+          set -uo pipefail
+          declare -A TARGETS=(
+            ["api"]="https://trustlist-api.onrender.com/v1/health"
+            ["yield scout"]="https://trustlist-yield-scout.onrender.com/health"
+            ["range keeper"]="https://trustlist-range-keeper.onrender.com/health"
+          )
+          FAILED=0
+          for name in "${!TARGETS[@]}"; do
+            url="${TARGETS[$name]}"
+            code=000
+            # A cold instance answers 404 for up to a minute. Retry rather
+            # than record a failure that is really a spin up.
+            for attempt in $(seq 1 10); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url" || echo 000)
+              [ "$code" = "200" ] && break
+              sleep 10
+            done
+            if [ "$code" = "200" ]; then
+              echo "ok    $name answered 200 after $attempt attempt(s)"
+            else
+              echo "FAIL  $name last returned $code after 10 attempts" >&2
+              FAILED=1
+            fi
+          done
+          exit $FAILED
