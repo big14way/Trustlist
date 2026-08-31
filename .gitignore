@@ -30,3 +30,6 @@ web/test-results/
 web/playwright-report/
 web/.next-prod/
 .devchain.env
+
+# The Altana wallet credential. This file is the wallet.
+.altana-wallet.json
