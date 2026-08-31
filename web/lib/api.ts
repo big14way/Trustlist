@@ -37,6 +37,8 @@ export type AgentList = {
 };
 
 export type Stats = {
+  /// Answering agents per category. Absent before the first scoring pass.
+  categories?: Record<string, number>;
   /// False before the first scoring pass, when we genuinely have nothing
   /// measured yet and the page must say so rather than print zeroes.
   measured: boolean;

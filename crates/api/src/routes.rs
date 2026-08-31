@@ -246,8 +246,38 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
         return Ok(Json(json!({ "measured": false })));
     };
 
+    // How many agents are answering in each category, counted the same way
+    // the marketplace filters. The hackathon judges agent diversity across
+    // four categories and treats favouring one as disqualifying, so the
+    // marketplace has to be able to show its coverage rather than assert it.
+    // These are counts of agents whose status was earned by enough probes,
+    // which is the same bar the default listing uses.
+    let category_rows = sqlx::query(
+        "select c as category, count(*)::bigint as answering
+           from agent_scores s
+           join agents a on a.agent_id = s.agent_id
+           cross join lateral unnest(a.categories) as c
+          where s.computed_at = (select max(computed_at) from agent_scores)
+            and s.status in ('live', 'flaky')
+          group by c",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(%e, "category counts failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let mut categories = serde_json::Map::new();
+    for r in &category_rows {
+        categories.insert(
+            r.get::<String, _>("category"),
+            json!(r.get::<i64, _>("answering")),
+        );
+    }
+
     Ok(Json(json!({
         "measured": true,
+        "categories": categories,
         "registered": row.get::<i64, _>("registered"),
         "cards_ok": row.get::<i64, _>("cards_ok"),
         "with_endpoints": row.get::<i64, _>("with_endpoints"),

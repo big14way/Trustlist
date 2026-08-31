@@ -69,13 +69,19 @@ function Card({ agent, uptime }: { agent: AgentCard; uptime: UptimeMap }) {
   );
 }
 
+// The four the BNB Agent Studio brief names come first and in its order:
+// rebalancing, grid trading, yield optimisation, health factor monitoring.
+// Judging treats favouring one category as disqualifying, and monitoring
+// used to sit at the head of this list purely because it was written first,
+// which put a category the brief does not name ahead of all four that it
+// does. Ordering is not a cosmetic choice here.
 const CATEGORIES = [
   { id: "", label: "All" },
-  { id: "monitoring", label: "Monitoring" },
+  { id: "rebalancing", label: "Rebalancing" },
   { id: "grid-trading", label: "Grid trading" },
   { id: "yield", label: "Yield" },
   { id: "health-factor", label: "Health factor" },
-  { id: "rebalancing", label: "Rebalancing" },
+  { id: "monitoring", label: "Monitoring" },
   { id: "pancakeswap", label: "PancakeSwap" },
 ];
 
@@ -93,10 +99,16 @@ function FilterRail({
   category,
   showDormant,
   dormantCount,
+  counts,
 }: {
   category: string;
   showDormant: boolean;
   dormantCount: number;
+  /// Answering agents per category, measured, not asserted. Showing the
+  /// number next to each chip is the difference between claiming coverage
+  /// and demonstrating it, and it is honest about the thin ones: grid
+  /// trading really does have fewer live agents than yield.
+  counts: Record<string, number>;
 }) {
   return (
     <div className="mt-6">
@@ -112,6 +124,11 @@ function FilterRail({
               }`}
             >
               {c.label}
+              {c.id && counts[c.id] !== undefined ? (
+                <span className="font-data ml-1.5 opacity-70">
+                  {counts[c.id]}
+                </span>
+              ) : null}
             </a>
           </li>
         ))}
@@ -220,6 +237,7 @@ export default async function Home({
         category={category}
         showDormant={showDormant}
         dormantCount={dormantCount}
+        counts={stats?.categories ?? {}}
       />
 
       <section aria-label="Agents" className="mt-8">
