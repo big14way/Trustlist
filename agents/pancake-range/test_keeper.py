@@ -13,6 +13,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import chain  # noqa: E402
 from keeper import (  # noqa: E402
     Position,
     analyse,
@@ -120,3 +121,38 @@ class ProposedRange(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TickDecoding(unittest.TestCase):
+    """An int24 arrives sign extended into a 256 bit word.
+
+    Decoding it as 24 bits wide is correct for positive ticks and produces a
+    number around 1e77 for negative ones. Every position with a negative tick
+    was therefore unreadable, and the agent answered 502 on live position
+    7284200. Positive ticks pass either way, which is why the first position
+    anyone tried never showed it.
+    """
+
+    def test_a_positive_tick_is_itself(self):
+        self.assertEqual(chain._tick(6193), 6193)
+        self.assertEqual(chain._tick(0), 0)
+
+    def test_a_negative_tick_comes_back_negative(self):
+        # -49550 as the ABI encodes it: sign extended across the full word.
+        word = (1 << 256) - 49550
+        self.assertEqual(chain._tick(word), -49550)
+
+    def test_the_real_position_that_broke_it(self):
+        # Live position 7284200 on BSC: lower -49500, upper -49400.
+        self.assertEqual(chain._tick((1 << 256) - 49500), -49500)
+        self.assertEqual(chain._tick((1 << 256) - 49400), -49400)
+
+    def test_the_extremes_of_int24(self):
+        self.assertEqual(chain._tick(8388607), 8388607)
+        self.assertEqual(chain._tick((1 << 256) - 8388608), -8388608)
+
+    def test_decoding_as_24_bits_is_what_was_wrong(self):
+        # Kept as documentation of the bug: the old call produced this.
+        word = (1 << 256) - 49550
+        self.assertNotEqual(chain._signed(word, 24), -49550)
+        self.assertGreater(chain._signed(word, 24), 1 << 200)

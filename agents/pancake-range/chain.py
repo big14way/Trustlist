@@ -71,10 +71,27 @@ def _word(data: str, i: int) -> int:
 
 
 def _signed(value: int, bits: int) -> int:
-    """Two's complement, for the int24 ticks the pool returns."""
+    """Two's complement of a `bits` wide value."""
     if value >= 1 << (bits - 1):
         return value - (1 << bits)
     return value
+
+
+def _tick(word: int) -> int:
+    """Decode an int24 tick out of the 256 bit word the ABI returns.
+
+    The encoding sign extends across the whole word, so a negative tick
+    arrives as a number just under 2**256 rather than just under 2**24.
+    Treating it as 24 bits wide subtracts 2**24 from a 2**256 sized number
+    and leaves nonsense: tick -49548 came back as 1.157e77, and every price
+    and in-range decision computed from it was meaningless.
+
+    Nothing caught this because positions with positive ticks decode
+    correctly either way, and the first position anyone tested had positive
+    ticks. Live position 7284200 has negative ones and the agent returned a
+    502 on it.
+    """
+    return _signed(word, 256)
 
 
 def read_position(url: str, token_id: int) -> Dict[str, Any]:
@@ -85,8 +102,8 @@ def read_position(url: str, token_id: int) -> Dict[str, Any]:
         "token0": f"0x{data[2 + 2 * 64 + 24 : 2 + 3 * 64]}",
         "token1": f"0x{data[2 + 3 * 64 + 24 : 2 + 4 * 64]}",
         "fee": _word(data, 4),
-        "tick_lower": _signed(_word(data, 5), 24),
-        "tick_upper": _signed(_word(data, 6), 24),
+        "tick_lower": _tick(_word(data, 5)),
+        "tick_upper": _tick(_word(data, 6)),
         "liquidity": _word(data, 7),
         "tokens_owed0": _word(data, 10),
         "tokens_owed1": _word(data, 11),
@@ -104,7 +121,7 @@ def read_pool(url: str, token0: str, token1: str, fee: int) -> str:
 def read_current_tick(url: str, pool: str) -> int:
     data = _call(url, pool, SEL_SLOT0)
     # slot0 returns sqrtPriceX96, tick, ... ; the tick is the second word.
-    return _signed(_word(data, 1), 24)
+    return _tick(_word(data, 1))
 
 
 def read_token_meta(url: str, token: str) -> Tuple[int, str]:

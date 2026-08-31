@@ -13,3 +13,4 @@ sent. Written by the scripts that send them, not by hand.
 | 2026-08-31 10:14 | register Range Keeper as agent 320966 | 186236 | [0xebf6dfdc..01669921](https://bscscan.com/tx/0xebf6dfdc43e53b212a3c60df228a36cfd22e1f80229bebd55a3ea27701669921) |
 | 2026-08-31 10:18 | submit delivery for job 56675 | 93412 | [0x96158b9b..598762e9](https://bscscan.com/tx/0x96158b9bd2c0478f5a593e7baded0b30a4de74a29ae4b7a9febf95f6598762e9) |
 | 2026-08-31 10:19 | accept job 56675, escrow released to the agent | 101008 | [0x240010b2..9128abc1](https://bscscan.com/tx/0x240010b2c8440c784a3eadc1536a886196a81e65341ebbab5fad1ab89128abc1) |
+| 2026-08-31 13:27 | register Token Screen as agent 322154 | 183612 | [0xbdf6cf9a..164d0166](https://bscscan.com/tx/0xbdf6cf9acc986d26920522c9adbaf70b7865f1632ba948d1363b6616164d0166) |
