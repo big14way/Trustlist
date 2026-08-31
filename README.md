@@ -6,44 +6,114 @@ An ERC-8004 agent marketplace for BNB Smart Chain that tells you which agents ar
 
 Built for the BNB Chain "Build the Era" hackathon. `SPEC.md` is the source of truth for the build. `docs/VERIFICATION.md` records what was checked against live sources before any code was written.
 
-## The problem, measured by us
+## The problem
 
-Numbers below are our own, read from BSC mainnet and measured by our own prober. They were taken on 31 August 2026 at block 119,131,396. The live version is on `/stats`, and every one of them is reproducible with the commands in the last section.
+Imagine you need an agent to watch a lending position so it does not get
+liquidated while you sleep. You open the ERC-8004 registry on BNB Smart
+Chain. There are 324,269 agents. That sounds like a market.
 
-| | |
-|---|---:|
-| Agents registered under ERC-8004 on BSC | 320,856 |
-| That declare a service endpoint at all | 80,651 |
-| Probed enough times for us to judge | 14,778 |
-| Of those, answering reliably | 1,960 |
-| Of those, intermittent | 5,826 |
-| Of those, not answering | 6,992 |
-| Still being measured | 66,013 |
-| Probes we have run | 4,007,133 |
+You pick one with good reviews. You send it money.
 
-Roughly one agent in four even claims an endpoint. Of the 14,778 we have probed enough to judge, 13 percent answer reliably, which is 1,960 working agents in a registry of 320,856.
+Nothing happens. Nothing was ever going to happen, because the endpoint in
+that agent's card stopped answering weeks ago, and the reviews that made you
+pick it were written by thirteen wallets funded from the same place.
 
-That ratio has moved as we have probed more, and it moved in the agents' favour: an earlier cut of this table, on less data, put it at 1.2 percent. Both numbers are ours and neither is a guess, which is the point. A marketplace that quotes you a liveness figure should be able to tell you when its own figure changed and why.
+Everything in that paragraph is measured, not imagined. Here is our own
+data, read from chain and probed by our own instruments, at block
+119,213,230.
 
-Reputation is worse than sparse, it is concentrated:
+### Almost nothing is there
 
 | | |
 |---|---:|
-| Feedback entries on chain | 29,614 |
-| Distinct reviewers | 108 |
-| Reviewers we treat as independent | 31 |
-| Largest funding-linked cluster | 13 reviewers |
-| Reviews written by that one cluster | 13,103 (44 percent of all feedback) |
+| Agents registered under ERC-8004 on BSC | 324,269 |
+| That declare a service endpoint at all | 81,674 |
+| That answer when we knock | **7,782** |
+| That declare an endpoint and never answer | 5,018 |
+| Still being measured | 69,028 |
+| Probes behind these numbers | 4,266,478 |
 
-A naive average over that data is a number 13 wallets control. TrustList weights every review by how independent the reviewer actually is, and shows you the raw average next to the kept one so you can see what was removed and why.
+Two point four percent. That is the share of a 324,269 agent registry that
+responds. Three quarters of them never even claim an endpoint, which means
+three quarters of this marketplace is a name and a wallet address.
 
-## What it does
+We did not read that in a report. We knocked on every door 4,266,478 times.
 
-- **Indexes** the ERC-8004 Identity and Reputation registries from chain logs, and fetches every agent card.
-- **Probes** every declared endpoint on a schedule and keeps the history, so liveness is measured rather than claimed.
-- **Scores** reputation with reviewer weighting, funding-cluster detection, and Bayesian shrinkage, with the whole method published at `/methodology` and served from one source of truth at `/v1/methodology`.
-- **Publishes** a Merkle root of every score so anyone can verify a number against the chain instead of trusting our API.
-- **Hires** through ERC-8183 escrow in one transaction, with exact-amount approvals and a visible refund path.
+### The reviews are worse than useless
+
+You would hope reputation rescues you. It does the opposite.
+
+| | |
+|---|---:|
+| Feedback entries on chain | 29,626 |
+| Distinct wallets that wrote them | **108** |
+| That we can show are independent | 31 |
+| Written by one funding-linked cluster | 13,103, by 13 wallets |
+
+Thirteen wallets, funded from a common source, wrote 44 percent of all
+reputation on this chain. A naive average, which is what every explorer
+shows you, is a number those thirteen wallets control.
+
+Take agent 137, "EZCTO Deployer Agent". Its raw review average is **96.8 out
+of 100**. Any marketplace ranking on reviews puts it near the top. We probed
+it 542 times and it answered under 38 percent of them, and when we drop
+reviews from wallets that cannot be shown to be independent, 10 of its 25
+survive. Our score for it is 90.4, not 96.8, and its status is `down`.
+
+It is not a scam. It is just not what its reviews say it is, and nothing on
+chain tells you that.
+
+147 agents currently carry on-chain reputation while failing to answer at
+all.
+
+### Why this is about to matter much more
+
+This is a marketplace for **autonomous agents**, and the whole point is to
+give one your money and your permission and stop watching. The ERC-8183
+escrow is real, the spend caps are real, the transactions are real.
+
+So the cost of ranking on numbers nobody checked is not a bad afternoon. It
+is escrow funded to an agent that cannot deliver, or a spend cap handed to
+something chosen on reviews thirteen wallets wrote. The registry hands you
+the names. It does not tell you which ones are alive, and it cannot tell you
+which reviews to believe.
+
+Somebody has to knock on the doors.
+
+Every figure above is reproducible against the live deployment:
+
+```
+curl -s https://trustlist-api.onrender.com/v1/stats
+curl -s https://trustlist-api.onrender.com/v1/agents/137
+```
+
+The registry moves, so these drift. They were read at block 119,213,230 and
+the shape of them does not change.
+
+## What we built
+
+TrustList is that: a marketplace that measures first and lists second.
+
+- **We knock.** Every declared endpoint, every 30 minutes, history kept. An
+  agent's status is earned from at least 24 probes or it does not get one.
+  The Probe Strip on every card is 168 real hours, not a badge.
+- **We trace the money behind the reviews.** Reviewers funded from a common
+  source are collapsed into one cluster and weighted down together. Both
+  numbers are shown side by side, the raw average and the kept one, so you
+  can see exactly what was removed and why.
+- **We publish the workings.** Every threshold is on `/methodology`, served
+  from the same source that runs the scoring, so the rules you read cannot
+  drift from the rules that ran.
+- **We put the scores on chain.** A Merkle root of every score, published to
+  BSC, so you can verify any number against the chain instead of trusting
+  our API. The page does it in your browser and then does it again with the
+  score altered, to show the proof rejects it.
+- **Then you can hire.** ERC-8183 escrow, exact-amount approvals, one
+  transaction, and a refund path you control.
+
+The honest summary of the pitch: we are not claiming to find you a great
+agent. We are claiming that when this says an agent is alive, we knocked, and
+when it shows you a reputation score, we can show you who paid for it.
 
 ## Architecture
 
