@@ -4,7 +4,11 @@
 # rather than a Rust toolchain. sqlx is built on rustls, not OpenSSL, so
 # there is no system TLS library to install and no version of it to get
 # wrong against the hosted Postgres.
-FROM rust:1-slim AS build
+# Pinned to bookworm to match the runtime stage below. rust:1-slim tracks
+# Debian trixie, whose glibc is newer than bookworm's, so the binary built
+# there asked for GLIBC_2.38 and the runtime image exited immediately with
+# "version `GLIBC_2.38' not found". Both stages have to agree.
+FROM rust:1-slim-bookworm AS build
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config \
  && rm -rf /var/lib/apt/lists/*
