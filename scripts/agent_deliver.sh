@@ -25,6 +25,8 @@ cd "$(dirname "$0")/.."
 
 # shellcheck disable=SC1091
 source scripts/env.sh
+# shellcheck disable=SC1091
+source scripts/chainlib.sh
 load_env_files
 
 JOB_ID=""
@@ -178,17 +180,19 @@ if [ "$ASSUME_YES" != "1" ]; then
 fi
 
 say "submit"
-RECEIPT=$(cast send "$KERNEL" 'submit(uint256,bytes32,bytes)' "$JOB_ID" "$DELIVERABLE" 0x \
-  --private-key "$KEY" --rpc-url "$RPC" --json)
-
-read -r TX BLOCK GAS_USED < <(python3 - "$RECEIPT" <<'PY'
-import json, sys
-r = json.loads(sys.argv[1])
-if int(str(r.get("status")), 16) != 1:
-    sys.exit("the submit transaction reverted")
-print(r["transactionHash"], int(str(r["blockNumber"]), 16), int(str(r["gasUsed"]), 16))
-PY
-)
+# The first real mainnet delivery landed on chain while this script reported
+# nothing, because cast send could not read the receipt back and that looked
+# like a failure. send_and_wait keeps the hash whatever the node does next.
+set +e
+send_and_wait "$RPC" "$KEY" "$KERNEL" 'submit(uint256,bytes32,bytes)' "$JOB_ID" "$DELIVERABLE" 0x
+rc=$?
+set -e
+if [ "$rc" = "2" ]; then
+  echo "job $JOB_ID may already be delivered. Check the hash above before resending." >&2
+  exit 2
+fi
+[ "$rc" = "0" ] || exit 1
+TX=$TX_HASH; BLOCK=$TX_BLOCK; GAS_USED=$TX_GAS_USED
 
 say "delivered"
 echo "  job       $JOB_ID"

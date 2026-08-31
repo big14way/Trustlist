@@ -26,6 +26,8 @@ cd "$(dirname "$0")/.."
 
 # shellcheck disable=SC1091
 source scripts/env.sh
+# shellcheck disable=SC1091
+source scripts/chainlib.sh
 load_env_files
 
 CARD_URL=""
@@ -175,14 +177,24 @@ if [ "$ASSUME_YES" != "1" ]; then
 fi
 
 say "register"
-RECEIPT=$(cast send "$REGISTRY" "register(string)" "$CARD_URL" \
-  --private-key "$KEY" --rpc-url "$RPC" --json)
+# A registration that landed but was reported as failed is the worst case
+# here: resending mints a second agent and pays for it. Keep the hash.
+set +e
+send_and_wait "$RPC" "$KEY" "$REGISTRY" "register(string)" "$CARD_URL"
+rc=$?
+set -e
+if [ "$rc" = "2" ]; then
+  echo "an agent may already have been minted. Check the hash above before resending." >&2
+  exit 2
+fi
+[ "$rc" = "0" ] || exit 1
+TX=$TX_HASH; BLOCK=$TX_BLOCK; GAS=$TX_GAS_USED
 
-read -r TX BLOCK AGENT_ID < <(python3 - "$RECEIPT" <<'PY'
+# The agent id comes from the Registered event, read back from the chain
+# rather than from the send, for the same reason.
+AGENT_ID=$(cast receipt "$TX" --rpc-url "$RPC" --json | python3 -c '
 import json, sys
-r = json.loads(sys.argv[1])
-if int(str(r.get("status")), 16) != 1:
-    sys.exit("the registration transaction reverted")
+r = json.load(sys.stdin)
 # Registered(uint256 indexed agentId, string agentURI, address indexed owner),
 # topic0 pinned in crates/indexer/src/events.rs.
 TOPIC0 = "0xca52e62c367d81bb2e328eb795f7c7ba24afb478408a26c0e201d155c449bc4a"
@@ -190,9 +202,8 @@ ids = [int(log["topics"][1], 16) for log in r["logs"]
        if log["topics"] and log["topics"][0].lower() == TOPIC0]
 if len(ids) != 1:
     sys.exit(f"expected exactly one Registered event, found {len(ids)}")
-print(r["transactionHash"], int(str(r["blockNumber"]), 16), ids[0])
-PY
-)
+print(ids[0])
+')
 
 say "registered"
 echo "  agent id  $AGENT_ID"

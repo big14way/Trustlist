@@ -17,9 +17,9 @@ Last updated 31 August 2026.
 | `make verify` passes | done |
 | Contract line coverage on `contracts/src` | 100 percent |
 | Golden journeys | all 5 written, 4 pass, journey 02 skips because the Altana wallet is unfunded |
-| Contracts deployed to BSC mainnet | done for HireRail and TrustListHook, 31 August 2026. TrustSnapshot still to come |
+| Contracts deployed to BSC mainnet | done, all three, 31 August 2026 |
 | Contracts verified on BscScan | done, both with published source, confirmed by reading them back from the API |
-| Two mainnet transactions inside the window | two deploys are logged in `scripts/tx_log.md`, but the spec wants two **from HireRail**, so this stays open until the demo hire |
+| Two mainnet transactions inside the window | done, `hire` and `accept` on HireRail, job 56675 completed with escrow released. Nine transactions logged in `scripts/tx_log.md` |
 | Altana session and revoke hashes | **not done**, zero grants ever signed. The page and scoped permissions are written and type check, the relay is answering again, the wallet needs BNB |
 | x402 metered path | **not done**, not started. Both our agents declare `x402Support: false`, which is the truth |
 | `docs/ADVANTAGE_REPORT.md` with three real tasks | **not done** |
@@ -58,6 +58,34 @@ section 18 records for forking. The transactions had landed. Retrying would
 have deployed a second set and paid for it twice. The runbook says to check
 the chain before retrying, and that is what settled it: nonce 2, the balance
 down by exactly the execution gas, and code at both addresses.
+
+## The first mainnet hire
+
+Job 56675, 31 August 2026. A real ERC-8183 job against the real kernel, from
+the marketplace's own rail, paid out of escrow.
+
+| step | transaction | gas |
+|---|---|---|
+| register Yield Scout as agent 320964 | `0x3ded3df0..167a1bb0` | 203,460 |
+| swap 0.0003 BNB into 0.2057 U | `0xcb4f1ad4..b0e450e0` | 136,387 |
+| approve exactly 0.2 U | `0x12dee858..a006b9dbd` | 60,245 |
+| `hire`, Direct mode | `0xa994fbcc..516824a9` | 471,330 |
+| `submit`, signed by the agent owner | `0x96158b9b..598762e9` | 93,412 |
+| `accept`, escrow released | `0x240010b2..9128abc1` | 101,008 |
+
+The kernel reports the job as Completed. The 0.2 U went out of the hirer's
+balance into escrow and came back to the provider in full, and HireRail was
+left holding nothing, which is the same pair of assertions the fork test and
+the rehearsal make.
+
+Hirer and provider are the same address here, which is worth stating rather
+than hiding: we hired our own agent. That is not a limitation of the rail,
+it is a consequence of the only agent whose owner key we hold being one we
+registered. `HireRailFork.t.sol` runs the two party case against the same
+live kernel.
+
+`hire` and `accept` are the two mainnet transactions from our own contract
+that SPEC Section 29.2 asks for at M4.
 
 ## The data honesty audit
 
