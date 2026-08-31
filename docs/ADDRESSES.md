@@ -6,13 +6,17 @@ All addresses are BSC mainnet, chain id 56, unless the row says otherwise.
 
 ## Ours
 
-Nothing of ours is on mainnet yet. Both contracts are written, tested, and exercised end to end on a local dev chain, and `HireRailFork.t.sol` proves HireRail works against the real deployed ERC-8183 stack on a mainnet fork. Deployment is waiting on funding the deployer. The whole remaining plan costs 0.00033 BNB in gas at 0.05 gwei, itemised transaction by transaction in `docs/SUBMISSION.md` and measured in `docs/VERIFICATION.md` sections 17 and 18. `scripts/mainnet_rehearsal.sh` runs that plan against a fork of mainnet, so the sequence is proven before any of it is paid for.
+HireRail and TrustListHook are on BSC mainnet as of 31 August 2026. Every immutable on the deployed rail was read back off chain and matches the ERC-8183 addresses in the table below: kernel, router, policy, the hook, and the payment token it resolved from the kernel. The dispute window it reports is 604800 seconds, read from the live policy rather than assumed.
+
+TrustSnapshot is not deployed yet; it follows with the first published root.
+
+`scripts/mainnet_rehearsal.sh` ran this whole sequence against a fork of mainnet first, which is why the gas the deploy actually used, 145,579 and 1,938,974, matches what the rehearsal predicted.
 
 | Contract | Address | State | Notes |
 |---|---|---|---|
-| HireRail | | not deployed | One transaction wraps create, fund, and set provider on the ERC-8183 kernel |
-| TrustSnapshot | | not deployed | Publishes the Merkle root of every score |
-| TrustListHook | | not deployed | Minimal IACPHook, satisfies the kernel's ERC-165 gate |
+| HireRail | `0x9fA9Cd8DDDd33eAc46C8c600371cc61ED79411e1` | deployed | One transaction wraps create, fund, and set provider on the ERC-8183 kernel. Owner is the deployer, not paused |
+| TrustSnapshot | | not deployed | Publishes the Merkle root of every score. Follows with the first published root |
+| TrustListHook | `0x2685352E856074a879E1a8fe737B7fCA270Aa77f` | deployed | Minimal IACPHook, satisfies the kernel's ERC-165 gate |
 | Deployer | `0xFC4884Ee9553a7B412C923980c1cDD7dee82cB94` | not deployed | An externally owned account, so no bytecode is the correct state |
 
 ## ERC-8004, the registries we index
