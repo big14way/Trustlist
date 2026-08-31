@@ -22,7 +22,7 @@ Last updated 31 August 2026.
 | Two mainnet transactions inside the window | done, `hire` and `accept` on HireRail, job 56675 completed with escrow released. Nine transactions logged in `scripts/tx_log.md` |
 | Altana session and revoke hashes | **not done**, zero grants ever signed. The page and scoped permissions are written and type check, the relay is answering again, the wallet needs BNB |
 | x402 metered path | **not done**, not started. Both our agents declare `x402Support: false`, which is the truth |
-| `docs/ADVANTAGE_REPORT.md` with three real tasks | **not done** |
+| `docs/ADVANTAGE_REPORT.md` with three real tasks | done, three tasks measured both ways with real mainnet job ids 56676, 56677 and 56678 |
 | Judge mode | **not done** |
 | Live deployment URL | **not done**, local only |
 | The mainnet plan rehearsed end to end on a fork | done, `scripts/mainnet_rehearsal.sh` passes: deploy, register, hire, submit, accept, escrow released |

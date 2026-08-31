@@ -1,0 +1,152 @@
+{
+  "measured_at": "2026-08-31T13:46:56Z",
+  "rpc": "https://bsc.rpc.blxrbdn.com",
+  "note": "The baseline is scripted, which flatters the baseline: a person doing this in a block explorer is far slower than a script making the same calls. These margins are floors.",
+  "tasks": [
+    {
+      "id": 1,
+      "domain": "security",
+      "title": "Screen four BSC tokens for the powers their owner keeps",
+      "question": "For USDT, U, WBNB and CAKE: who owns it, can the code be replaced, and which of six owner powers exist in the deployed bytecode?",
+      "agent": "Token Screen, ERC-8004 agent 322154",
+      "by_hand": {
+        "seconds": 58.52,
+        "lookups": 44,
+        "output": {
+          "USDT": {
+            "owner": "0xf68a4b64162906eff0ff6ae34e2bb1cd42fef62d",
+            "upgradeable": false,
+            "powers": []
+          },
+          "U": {
+            "owner": "0x59f94ade4f881f21ea608ad4448bf70b78e37187",
+            "upgradeable": true,
+            "powers": [
+              "mint(address,uint256)",
+              "pause()"
+            ]
+          },
+          "WBNB": {
+            "owner": null,
+            "upgradeable": false,
+            "powers": []
+          },
+          "CAKE": {
+            "owner": "0x73feaa1ee314f8c655e354234017be2193c9e24e",
+            "upgradeable": false,
+            "powers": [
+              "mint(address,uint256)"
+            ]
+          }
+        }
+      },
+      "by_agent": {
+        "seconds": 6.87,
+        "requests": 4,
+        "output": {
+          "USDT": {
+            "owner": "0xf68a4b64162906eff0ff6ae34e2bb1cd42fef62d",
+            "upgradeable": false,
+            "powers": [],
+            "verdict": "owned, read the findings"
+          },
+          "U": {
+            "owner": "0x59f94ade4f881f21ea608ad4448bf70b78e37187",
+            "upgradeable": true,
+            "powers": [
+              "mint(address,uint256)",
+              "pause()"
+            ],
+            "verdict": "risky"
+          },
+          "WBNB": {
+            "owner": null,
+            "upgradeable": false,
+            "powers": [],
+            "verdict": "no owner powers found"
+          },
+          "CAKE": {
+            "owner": "0x73feaa1ee314f8c655e354234017be2193c9e24e",
+            "upgradeable": false,
+            "powers": [
+              "mint(address,uint256)"
+            ],
+            "verdict": "risky"
+          }
+        }
+      },
+      "answers_agree": true,
+      "speedup": 8.5
+    },
+    {
+      "id": 2,
+      "domain": "trading",
+      "title": "Find the best USDT pool on PancakeSwap V3 for a 10,000 dollar position",
+      "question": "Which USDT pool would have paid the most on 10,000 dollars over the last seven days, after our own position dilutes the pool?",
+      "agent": "Yield Scout, ERC-8004 agent 320964",
+      "by_hand": {
+        "seconds": 1.04,
+        "lookups": 1,
+        "output": {
+          "considered": 20,
+          "best": {
+            "pair": "NVDAB/USDT",
+            "apr": 179.14,
+            "tvl": 2536326.813322855,
+            "fee_bps": 25.0
+          }
+        }
+      },
+      "by_agent": {
+        "seconds": 0.91,
+        "requests": 1,
+        "output": {
+          "considered": 30,
+          "best": {
+            "pair": "NVDAB/USDT",
+            "fee_bps": 25.0,
+            "tvl": 2622976.59
+          },
+          "stated_apr": 171.56,
+          "apr_recomputed_by_us": 171.56,
+          "answer": "NVDAB/USDT at 25 bps would have paid about 171.6 percent annualised on 10,000 dollars over the last week."
+        }
+      },
+      "answers_agree": true,
+      "speedup": 1.1
+    },
+    {
+      "id": 3,
+      "domain": "monitoring",
+      "title": "Decide whether PancakeSwap V3 position 7284200 needs action",
+      "question": "Is this concentrated liquidity position still in range, and should anything be done about it?",
+      "agent": "Range Keeper, ERC-8004 agent 320966",
+      "by_hand": {
+        "seconds": 3.55,
+        "lookups": 5,
+        "output": {
+          "tick_lower": -49500,
+          "tick_upper": -49400,
+          "tick_current": -49557,
+          "liquidity": "0",
+          "in_range": false
+        }
+      },
+      "by_agent": {
+        "seconds": 2.04,
+        "requests": 1,
+        "output": {
+          "tick_lower": -49500,
+          "tick_upper": -49400,
+          "tick_current": -49557,
+          "liquidity": "0",
+          "in_range": false,
+          "action": "none",
+          "reason": "This position has no liquidity left, so there is nothing to keep in range."
+        }
+      },
+      "answers_agree": true,
+      "speedup": 1.7
+    }
+  ]
+}
