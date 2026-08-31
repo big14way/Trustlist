@@ -20,7 +20,8 @@ Last updated 31 August 2026.
 | Contracts deployed to BSC mainnet | done for HireRail and TrustListHook, 31 August 2026. TrustSnapshot still to come |
 | Contracts verified on BscScan | done, both with published source, confirmed by reading them back from the API |
 | Two mainnet transactions inside the window | two deploys are logged in `scripts/tx_log.md`, but the spec wants two **from HireRail**, so this stays open until the demo hire |
-| Altana session and revoke hashes | **not done**, page and scoped permissions built, the relay is answering again, the grant needs BNB |
+| Altana session and revoke hashes | **not done**, zero grants ever signed. The page and scoped permissions are written and type check, the relay is answering again, the wallet needs BNB |
+| x402 metered path | **not done**, not started. Both our agents declare `x402Support: false`, which is the truth |
 | `docs/ADVANTAGE_REPORT.md` with three real tasks | **not done** |
 | Judge mode | **not done** |
 | Live deployment URL | **not done**, local only |

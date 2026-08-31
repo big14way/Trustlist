@@ -146,4 +146,4 @@ Milestones M0 through M3, M5 and M6 are done and gated: `make verify` exits 0, a
 
 Also done: the zero dead ends pass, eighteen states walked with seven fixed (`docs/DEAD_ENDS.md`), and cold start inside the spec's five minute budget, measured at 89 seconds from a clean container.
 
-Not done yet: a completed hire on mainnet, the Altana session track (the relay is reachable again, the wallet needs BNB), the advantage report, judge mode, a hosted deployment, and the demo video. `docs/SUBMISSION.md` is the honest row by row state and `SPEC.md` Section 21 has the full plan.
+Not done yet: a completed hire on mainnet, the Altana session track (the page and the scoped permissions are written and type check, but no grant has ever been signed), the x402 metered path (not started, and first on the spec's own cut list), the advantage report, judge mode, a hosted deployment, and the demo video. `docs/SUBMISSION.md` is the honest row by row state and `SPEC.md` Section 21 has the full plan.
