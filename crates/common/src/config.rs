@@ -63,7 +63,15 @@ impl Config {
                 .parse()
                 .context("PROBE_INTERVAL_SECS")?,
             bscscan_api_key: optional("BSCSCAN_API_KEY"),
-            api_port: required("API_PORT")?.parse().context("API_PORT")?,
+            // API_PORT is ours; PORT is what every hosting platform sets.
+            // Preferring API_PORT keeps local behaviour unchanged, and the
+            // fallback means the same binary runs on a host without being
+            // told our variable name.
+            api_port: optional("API_PORT")
+                .or_else(|| optional("PORT"))
+                .context("neither API_PORT nor PORT is set")?
+                .parse()
+                .context("API_PORT")?,
             hire_rail_rpc: optional("HIRE_RAIL_RPC"),
             hire_rail_chain_id: optional("HIRE_RAIL_CHAIN_ID")
                 .map(|v| v.parse())
