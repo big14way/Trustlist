@@ -79,6 +79,10 @@ cargo test --workspace
 # Our own reference agents ship with the product, so their logic is tested
 # with everything else.
 bash scripts/test_agents.sh
+# The money safety net: a transaction that lands must never be reported as a
+# failure, whatever the node says about the receipt. Three real occurrences,
+# twice on mainnet, so it is gated rather than remembered.
+bash scripts/test_chainlib.sh
 ( cd contracts && forge test -vv )
 if find contracts/src -name '*.sol' | grep -q .; then
   # SPEC.md Section 14 sets the bar on src/, the code we actually ship.
