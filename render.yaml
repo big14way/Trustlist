@@ -1,0 +1,38 @@
+# Render blueprint for the two reference agents.
+#
+# They exist to be hired, which means the ERC-8004 registry has to hold a URL
+# our own prober can fetch. A card URL that does not answer makes the agent
+# index without a name and score as dormant, which is the opposite of a demo.
+#
+# Both are standard library Python with no dependencies, so these are the
+# smallest possible images. Neither holds funds, neither signs anything, and
+# neither needs a secret: the range keeper reads a public BSC RPC and the
+# yield scout reads PancakeSwap's public explorer API.
+#
+# If the blueprint does not import cleanly, the same thing can be set by hand
+# in the dashboard: a Web Service, Docker runtime, the Dockerfile path below,
+# health check /health. There is no build command and no start command to
+# fill in, because the Dockerfile carries both.
+services:
+  - type: web
+    name: trustlist-yield-scout
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./agents/pancake-yield/Dockerfile
+    dockerContext: ./agents/pancake-yield
+    healthCheckPath: /health
+    autoDeploy: true
+
+  - type: web
+    name: trustlist-range-keeper
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./agents/pancake-range/Dockerfile
+    dockerContext: ./agents/pancake-range
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: BSC_RPC_HTTP
+        value: https://bsc-rpc.publicnode.com

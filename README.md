@@ -8,26 +8,29 @@ Built for the BNB Chain "Build the Era" hackathon. `SPEC.md` is the source of tr
 
 ## The problem, measured by us
 
-Numbers below are our own, read from BSC mainnet and measured by our own prober. They were taken on 28 August 2026 at block 118,276,571. The live version is on `/stats`, and every one of them is reproducible with the commands in the last section.
+Numbers below are our own, read from BSC mainnet and measured by our own prober. They were taken on 31 August 2026 at block 119,131,396. The live version is on `/stats`, and every one of them is reproducible with the commands in the last section.
 
 | | |
 |---|---:|
-| Agents registered under ERC-8004 on BSC | 305,878 |
-| That declare a service endpoint at all | 71,146 |
-| Probed enough times for us to judge | 18,075 |
-| Of those, answering reliably | 218 |
-| Of those, intermittent | 5,767 |
-| Of those, not answering | 12,090 |
-| Probes we have run | 3,390,129 |
+| Agents registered under ERC-8004 on BSC | 320,856 |
+| That declare a service endpoint at all | 80,651 |
+| Probed enough times for us to judge | 14,778 |
+| Of those, answering reliably | 1,960 |
+| Of those, intermittent | 5,826 |
+| Of those, not answering | 6,992 |
+| Still being measured | 66,013 |
+| Probes we have run | 4,007,133 |
 
-So the registry is technically a marketplace and practically a graveyard. Roughly one agent in four even claims an endpoint, and of the ones we have measured enough to judge, 1.2 percent answer reliably.
+Roughly one agent in four even claims an endpoint. Of the 14,778 we have probed enough to judge, 13 percent answer reliably, which is 1,960 working agents in a registry of 320,856.
+
+That ratio has moved as we have probed more, and it moved in the agents' favour: an earlier cut of this table, on less data, put it at 1.2 percent. Both numbers are ours and neither is a guess, which is the point. A marketplace that quotes you a liveness figure should be able to tell you when its own figure changed and why.
 
 Reputation is worse than sparse, it is concentrated:
 
 | | |
 |---|---:|
-| Feedback entries on chain | 29,522 |
-| Distinct reviewers | 107 |
+| Feedback entries on chain | 29,614 |
+| Distinct reviewers | 108 |
 | Reviewers we treat as independent | 31 |
 | Largest funding-linked cluster | 13 reviewers |
 | Reviews written by that one cluster | 13,103 (44 percent of all feedback) |
@@ -95,10 +98,18 @@ Other targets: `make verify` (the completion gate), `make check` (fmt, clippy, t
 Being precise about this matters more than sounding impressive.
 
 - **Real, from mainnet**: every agent, name, endpoint, card, review, reviewer, funding trace, and probe result. All of it is indexed or measured by us. There is no mock data anywhere in the product.
-- **Local**: the hire flow currently runs against a local dev chain (anvil) with a kernel and router that enforce the same rules the live ones do. `HireRailFork.t.sol` proves the same HireRail code works against the real deployed mainnet contracts on a fork.
-- **Not yet on mainnet**: HireRail and TrustSnapshot are deployed and exercised locally, not on BSC mainnet. See the status section.
+- **On mainnet, ours**: all three contracts, deployed 31 August 2026 with verified source.
+
+  | Contract | Address |
+  |---|---|
+  | HireRail | [`0x9fA9Cd8DDDd33eAc46C8c600371cc61ED79411e1`](https://bscscan.com/address/0x9fA9Cd8DDDd33eAc46C8c600371cc61ED79411e1) |
+  | TrustSnapshot | [`0xb40d69864c42160eF69b75efcb02174Ab20e2E82`](https://bscscan.com/address/0xb40d69864c42160eF69b75efcb02174Ab20e2E82) |
+  | TrustListHook | [`0x2685352E856074a879E1a8fe737B7fCA270Aa77f`](https://bscscan.com/address/0x2685352E856074a879E1a8fe737B7fCA270Aa77f) |
+
+  The first Merkle root is published, over 40,004 scored agents. The root the API serves matches the root on chain, a proof the API serves verifies against the deployed contract, and the same proof with the score altered is rejected. Every transaction is in `scripts/tx_log.md`.
+- **Not done on mainnet yet**: a completed hire. The contracts are live but no job has run through them on mainnet, so `docs/SUBMISSION.md` still lists that row as open. `HireRailFork.t.sol` and `scripts/mainnet_rehearsal.sh` both run the full lifecycle against the real kernel on a fork, which is strong evidence and is not the same thing.
 - **Self-deployed registries** exist only in CI and the e2e suite, where synthetic data is the correct thing to have. The product never reads from them.
-- **What the green badge means**: every push loads a seed of real indexed rows, stands up a local chain, runs the trust engine once, deploys `TrustSnapshot`, publishes the root, and then checks that the root and a Merkle proof the API serves both match the chain. That proves the snapshot pipeline end to end. It is not a mainnet publish, and it does not claim to be one.
+- **What the green badge means**: every push loads a seed of real indexed rows, stands up a local chain, runs the trust engine once, deploys `TrustSnapshot`, publishes the root, and then checks that the root and a Merkle proof the API serves both match the chain. That proves the snapshot pipeline end to end on a local chain. The mainnet publish above is a separate, deliberate act by a person, and the badge does not cover it.
 
 ## Where the numbers come from
 
@@ -124,12 +135,15 @@ crates/common     config, methodology constants, snapshot hashing
 contracts/        HireRail, TrustSnapshot, and their tests
 web/              Next.js app, wagmi and viem, Playwright journeys
 agents/           two read-only PancakeSwap agents we built and probe like any other
-scripts/          the gate, the seed, the dev chain, the cold start test
-docs/             verification log, methodology, submission notes
+scripts/          the gate, the seed, the dev chain, the cold start test, the mainnet scripts
+docs/             verification log, methodology, submission notes, the mainnet runbook
+render.yaml       one click deploy for the two agents, so the registry has a card URL to fetch
 ```
 
 ## Status
 
-Milestones M0 through M3, M5, and the local half of M6 are done and gated: `make verify` exits 0.
+Milestones M0 through M3, M5 and M6 are done and gated: `make verify` exits 0, and M6 now holds against mainnet rather than a dev chain.
 
-Not done yet: mainnet deployment of HireRail and TrustSnapshot, the Altana session track, the x402 metered path, and the M9 polish pass. `SPEC.md` Section 21 has the full plan.
+Also done: the zero dead ends pass, eighteen states walked with seven fixed (`docs/DEAD_ENDS.md`), and cold start inside the spec's five minute budget, measured at 89 seconds from a clean container.
+
+Not done yet: a completed hire on mainnet, the Altana session track (the relay is reachable again, the wallet needs BNB), the advantage report, judge mode, a hosted deployment, and the demo video. `docs/SUBMISSION.md` is the honest row by row state and `SPEC.md` Section 21 has the full plan.
