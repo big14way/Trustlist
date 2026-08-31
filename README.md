@@ -77,6 +77,13 @@ A naive average over that data is a number 13 wallets control. TrustList weights
 
 Four Rust binaries share one workspace and one database. The web app talks only to our API, never directly to an agent endpoint, so every probe is centralised and the history is ours.
 
+## See it running
+
+The marketplace is live at **https://trustlistapp.vercel.app**, served by
+`https://trustlist-api.onrender.com` against a hosted copy of the real
+index. `docs/HOSTING.md` says exactly which parts of the index are copied
+and why.
+
 ## Run it
 
 Three commands, and only one value to fill in.

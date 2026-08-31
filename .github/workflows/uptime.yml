@@ -6,9 +6,11 @@ name: uptime
 # most of a minute while it comes back. A judge who arrives at a cold URL
 # sees a broken site. Pinging keeps it awake and records whether it was.
 #
-# This is a mitigation, not a fix. A free instance still drops requests while
-# warm: measured 8 of 12 over one minute on 31 August 2026. The honest fix is
-# a paid instance for the judging window, and docs/HOSTING.md says so.
+# The dropped requests turned out to be a workspace quota rather than a bad
+# instance: eleven free web services shared one allowance and the router
+# stopped sending ours traffic. With five deleted it went from 8 of 12 to
+# 20 of 20. Cold starts are still real, which is what the pinging is for.
+# docs/HOSTING.md has the measurements.
 
 on:
   schedule:
