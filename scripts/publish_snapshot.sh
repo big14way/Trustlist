@@ -152,21 +152,44 @@ OUT=$(cd contracts && DEPLOYER_KEY="$DEPLOYER_KEY" \
   --rpc-url "$RPC" --broadcast 2>&1) || { echo "$OUT" | tail -30 >&2; fail "the publish reverted"; }
 
 BROADCAST="contracts/broadcast/PublishSnapshot.s.sol/$CHAIN_ID/run-latest.json"
+# Match receipts to transactions by hash, never by position. Forge writes
+# receipts in the order they arrive, which is not the order the transactions
+# were sent: a real publish here recorded the deploy's receipt against the
+# publish call and the check below caught it. Positions in that file are not
+# a reliable way to identify anything, so the only things trusted from it are
+# the hashes, and each is resolved against the chain.
 read -r ADDR TX BLOCK GAS_USED < <(python3 - "$BROADCAST" <<'PY'
 import json, sys
 run = json.load(open(sys.argv[1]))
-tx = run["transactions"][-1]
-if not (tx.get("function") or "").startswith("publish("):
-    sys.exit(f"last broadcast transaction is {tx.get('function')!r}, not the publish call")
-receipt = run["receipts"][-1]
-if receipt["transactionHash"] != tx["hash"]:
-    sys.exit("the last receipt does not belong to the last transaction")
+receipts = {r["transactionHash"]: r for r in run["receipts"]}
+
+published = [t for t in run["transactions"]
+             if (t.get("function") or "").startswith("publish(")]
+if len(published) != 1:
+    sys.exit(f"expected exactly one publish call in the broadcast, found {len(published)}")
+tx = published[0]
+
+receipt = receipts.get(tx["hash"])
+if receipt is None:
+    sys.exit(f"no receipt was recorded for the publish call {tx['hash']}")
 if int(receipt["status"], 16) != 1:
     sys.exit("the publish transaction reverted")
+
+# Every transaction in the run has to have succeeded, or the register may
+# exist without the root in it.
+for t in run["transactions"]:
+    r = receipts.get(t["hash"])
+    if r is None or int(r["status"], 16) != 1:
+        sys.exit(f"transaction {t['hash']} has no successful receipt")
+
 print(tx["transaction"]["to"], receipt["transactionHash"],
       int(receipt["blockNumber"], 16), int(receipt["gasUsed"], 16))
 PY
 )
+# The broadcast file records what was sent. What is actually on chain is the
+# only thing worth acting on, so the address is confirmed before it is used.
+[ "$(cast code "$ADDR" --rpc-url "$RPC")" != "0x" ] \
+  || fail "the broadcast names $ADDR as the register but there is no code there"
 
 # The index inside the contract's own array, read back rather than assumed.
 IDX=$(cast call "$ADDR" 'snapshotCount()(uint256)' --rpc-url "$RPC" | awk '{print $1}')
