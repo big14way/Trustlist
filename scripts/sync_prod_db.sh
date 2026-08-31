@@ -98,7 +98,17 @@ rm -f /tmp/probes.tsv
 echo "  copied $(rpsql -tAc 'select count(*) from probe_results')"
 
 say "trust, snapshots and indexer state"
-for t in feedback reviewer_weights reviewer_funding agent_trust snapshots snapshot_leaves indexer_state probe_schedule jobs; do
+# registry_stats is the one the homepage reads for every headline number,
+# and leaving it out made the hosted site say "the prober has not completed
+# its first scoring pass" while holding 321,519 agents. The list is now
+# derived rather than typed, so a new table cannot be forgotten the same way.
+SMALL_TABLES=$(lpsql -tAc "
+  select table_name from information_schema.tables
+  where table_schema = 'public'
+    and table_name not in ('agents','agent_scores','probe_results',
+                           '_sqlx_migrations','seed_agents')
+  order by table_name")
+for t in $SMALL_TABLES; do
   if lpsql -tAc "select to_regclass('public.$t')" | grep -q "$t"; then
     rpsql -q -c "truncate $t cascade" 2>/dev/null || true
     pipe "pg_dump -U trustlist -d trustlist -t $t --data-only --no-owner | psql '$PROD_DATABASE_URL' -v ON_ERROR_STOP=1 -q"

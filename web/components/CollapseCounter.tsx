@@ -14,7 +14,18 @@ export function CollapseCounter({
   registered: number;
   answering: number;
 }) {
-  const [value, setValue] = useState(registered);
+  // Starts at the answering count, not the registered one. This number is
+  // rendered on the server and sits in the HTML until React takes over, and
+  // the sentence around it reads "<value> of 321,772 registered agents
+  // answer when probed". Starting at the registered count made that sentence
+  // claim every agent answers, which is the exact opposite of the finding
+  // this product exists to report. Anyone reading without JavaScript, any
+  // scraper, and a screen reader arriving before hydration saw that.
+  //
+  // The animation still runs: it jumps up to the registered count on mount
+  // and falls back down. The truthful value is what survives if the
+  // animation never happens.
+  const [value, setValue] = useState(answering);
   const [done, setDone] = useState(false);
   const ran = useRef(false);
 
@@ -31,6 +42,7 @@ export function CollapseCounter({
       return;
     }
     sessionStorage.setItem("collapse-ran", "1");
+    setValue(registered);
     const start = performance.now();
     const duration = 900;
     const tick = (t: number) => {
