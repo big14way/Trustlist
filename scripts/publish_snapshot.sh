@@ -54,6 +54,14 @@ RPC="${RPC:-${BSC_RPC_HTTP:-}}"
 say()  { printf '\n==> %s\n' "$1"; }
 fail() { echo "$*" >&2; exit 1; }
 
+# date -u -r <seconds> is BSD only. On GNU coreutils -r means a reference
+# file, so the same line prints a bare timestamp on Linux and a readable one
+# on a laptop. python3 is already a dependency here, so it does the job the
+# same way on both.
+utc_time() {
+  python3 -c 'import datetime,sys;print(datetime.datetime.fromtimestamp(int(sys.argv[1]),datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))' "$1" 2>/dev/null || echo "$1"
+}
+
 run_sql() {
   if command -v psql >/dev/null 2>&1; then
     psql "$DATABASE_URL" -tAc "$1"
@@ -118,7 +126,7 @@ fi
 echo "  snapshot  $SNAP_ID"
 echo "  root      $ROOT"
 echo "  agents    $COUNT"
-echo "  computed  $(date -u -r "$COMPUTED_AT" '+%Y-%m-%d %H:%M UTC' 2>/dev/null || echo "$COMPUTED_AT")"
+echo "  computed  $(utc_time "$COMPUTED_AT")"
 
 say "what this will cost"
 BALANCE=$(cast balance "$SIGNER" --rpc-url "$RPC")

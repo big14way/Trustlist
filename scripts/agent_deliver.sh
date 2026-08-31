@@ -73,6 +73,14 @@ KEY="${!KEY_VAR:-}"
 
 say() { printf '\n==> %s\n' "$1"; }
 
+# date -u -r <seconds> is BSD only. On GNU coreutils -r means a reference
+# file, so the same line prints a bare timestamp on Linux and a readable one
+# on a laptop. python3 is already a dependency here, so it does the job the
+# same way on both.
+utc_time() {
+  python3 -c 'import datetime,sys;print(datetime.datetime.fromtimestamp(int(sys.argv[1]),datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))' "$1" 2>/dev/null || echo "$1"
+}
+
 # A fork of mainnet answers 56 to eth_chainId, exactly as mainnet does, so
 # the chain id alone cannot tell a rehearsal from the real thing. Anything
 # served from this machine is a fork: real BSC is not on localhost. Getting
@@ -130,7 +138,7 @@ esac
 echo "  provider  $JOB_PROVIDER"
 echo "  budget    $(cast to-unit "$JOB_BUDGET" ether)"
 echo "  status    $STATUS_NAME"
-echo "  deadline  $(date -u -r "$JOB_DEADLINE" '+%Y-%m-%d %H:%M UTC' 2>/dev/null || echo "$JOB_DEADLINE")"
+echo "  deadline  $(utc_time "$JOB_DEADLINE")"
 
 # Both of these would revert on chain. Saying so here costs nothing and
 # saves the gas of finding out.

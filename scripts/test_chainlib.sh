@@ -29,11 +29,11 @@ BAD="http://127.0.0.1:$PROXY_PORT"
 KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 TO=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 
-ANVIL_PID=""; PROXY_PID=""; PROXY_PY=""
+ANVIL_PID=""; PROXY_PID=""; WORKDIR=""
 cleanup() {
   [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null || true
   [ -n "$ANVIL_PID" ] && kill "$ANVIL_PID" 2>/dev/null || true
-  [ -n "$PROXY_PY" ] && rm -f "$PROXY_PY" || true
+  [ -n "$WORKDIR" ] && rm -rf "$WORKDIR" || true
 }
 trap cleanup EXIT
 
@@ -50,7 +50,8 @@ done
 cast block-number --rpc-url "$RPC" >/dev/null 2>&1 || {
   echo "anvil did not start, see /tmp/chainlib-anvil.log" >&2; exit 1; }
 
-PROXY_PY=$(mktemp -t chainlibproxy).py
+WORKDIR=$(mktemp -d)
+PROXY_PY="$WORKDIR/proxy.py"
 cat > "$PROXY_PY" <<PY
 import json, sys, urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -106,12 +107,12 @@ BEFORE=$(cast block-number --rpc-url "$RPC")
 # Deliberately not inside $(...). Command substitution runs in a subshell,
 # so the variables send_and_wait sets would never reach this scope, and the
 # hash is exactly what this case is checking.
-OUTFILE=$(mktemp)
+OUTFILE="$WORKDIR/out.txt"
 set +e
 send_and_wait "$BAD" "$KEY" "$TO" --value 1 > "$OUTFILE" 2>&1
 rc=$?
 set -e
-OUT=$(cat "$OUTFILE"); rm -f "$OUTFILE"
+OUT=$(cat "$OUTFILE")
 AFTER=$(cast block-number --rpc-url "$RPC")
 
 [ "$rc" = "2" ] && ok "an unreadable receipt is its own outcome, not a failure" \
