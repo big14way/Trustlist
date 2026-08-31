@@ -4,7 +4,7 @@ TrustList is an ERC-8004 agent marketplace for BNB Smart Chain that measures whi
 
 This document is the honest state of the build. Items that are not done say so. Nothing here is aspirational.
 
-Last updated 30 August 2026.
+Last updated 31 August 2026.
 
 ## Where things stand
 
@@ -17,9 +17,9 @@ Last updated 30 August 2026.
 | `make verify` passes | done |
 | Contract line coverage on `contracts/src` | 100 percent |
 | Golden journeys | all 5 written, 4 pass, journey 02 skips because the Altana wallet is unfunded |
-| Contracts deployed to BSC mainnet | **not done**, waiting on funding |
-| Contracts verified on BscScan | **not done**, follows deployment |
-| Two mainnet transactions inside the window | **not done**, waiting on funding |
+| Contracts deployed to BSC mainnet | done for HireRail and TrustListHook, 31 August 2026. TrustSnapshot still to come |
+| Contracts verified on BscScan | done, both with published source, confirmed by reading them back from the API |
+| Two mainnet transactions inside the window | two deploys are logged in `scripts/tx_log.md`, but the spec wants two **from HireRail**, so this stays open until the demo hire |
 | Altana session and revoke hashes | **not done**, page and scoped permissions built, the relay is answering again, the grant needs BNB |
 | `docs/ADVANTAGE_REPORT.md` with three real tasks | **not done** |
 | Judge mode | **not done** |
@@ -30,7 +30,33 @@ Last updated 30 August 2026.
 | Zero dead ends table walked manually | done, 18 rows walked, 7 were broken and are fixed, `docs/DEAD_ENDS.md` |
 | Demo video | **not done** |
 
-The single blocker behind most of the "not done" rows is that the deployer account holds no BNB. The remaining on chain plan costs 0.00033 BNB in gas at the 0.05 gwei the chain is charging today, plus 0.002 BNB that becomes a job budget and comes back when the job settles. The ask is 0.01 BNB, and the funding note below says why it is larger than the total. The whole plan has been rehearsed against a fork of mainnet, so the numbers are gas burned rather than gas guessed.
+The deployer was funded with 0.00074 BNB on 31 August 2026 and the first two contracts are live. What remains on chain is cheap; the blocker is no longer money but a public home for the reference agent, which the registry has to be able to fetch.
+
+## What is on mainnet
+
+| Contract | Address | Block | Gas |
+|---|---|---|---|
+| TrustListHook | `0x2685352E856074a879E1a8fe737B7fCA270Aa77f` | 119,125,487 | 145,579 |
+| HireRail | `0x9fA9Cd8DDDd33eAc46C8c600371cc61ED79411e1` | 119,125,490 | 1,938,974 |
+
+Both have verified source on BscScan. Every immutable on the rail was read
+back off the chain rather than taken from the deploy log: kernel, router,
+policy, hook and payment token all match the addresses in
+`docs/ADDRESSES.md`, the owner is the deployer, and it is not paused. The
+dispute window it reports is 604800 seconds, which it read from the live
+OptimisticPolicy at construction.
+
+The gas matched the fork rehearsal exactly, to the unit, which is the whole
+reason the rehearsal existed.
+
+One thing worth recording because it nearly caused an expensive mistake. The
+deploy printed "Some transactions were discarded by the RPC node" and saved
+no receipts, which reads like a failure. It was not: PublicNode refuses
+receipt lookups as archive requests, the same limitation `docs/VERIFICATION.md`
+section 18 records for forking. The transactions had landed. Retrying would
+have deployed a second set and paid for it twice. The runbook says to check
+the chain before retrying, and that is what settled it: nonce 2, the balance
+down by exactly the execution gas, and code at both addresses.
 
 ## The data honesty audit
 
