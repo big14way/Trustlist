@@ -497,3 +497,57 @@ manifest. The fee finding from section 16 still holds: on BSC the only fee
 token listed is the zero address, the native coin, at a 1:1 native rate with
 zero gas buffers. So the session grant still needs BNB, and its cost is still
 unmeasured because no grant has been completed.
+
+## 19. What an Altana session actually costs (31 August 2026)
+
+Sections 16 and 17 both said the Altana grant fee was unmeasured, and every
+funding estimate carried that hole. It is measurable, and here it is.
+
+The relay's own fee config for BSC, read from `wallet_getCapabilities`:
+
+```
+recipient    0xaf089b4eca94a4b2f51d8f5668cff244f2c6c4bc
+fee token    0x0000000000000000000000000000000000000000  (native BNB)
+nativeRate   0xde0b6b3a7640000                           (1e18, so 1:1)
+gas buffers  intentBuffer 0, txBuffer 0
+```
+
+A 1:1 rate with zero buffers means the fee is the gas the relay pays, with
+no markup. So the cost can be read off real usage rather than guessed at.
+
+Scanning the last 100,000 blocks for transactions touching the orchestrator
+`0xaf140d0416a994aebb3fa6212b16ce6700f09751` found four, three of them in
+one window. Their gas:
+
+| transaction | gas | logs | at 0.05 gwei |
+|---|---|---|---|
+| `0xa74ea1fb..a1dbf8e7` | 490,753 | 15 | 0.00002454 BNB |
+| `0xf3aba642..52b6f46c` | 479,850 | 15 | 0.00002399 BNB |
+| `0xa3218a26..08d8e7d43` | 175,105 | 2 | 0.00000876 BNB |
+
+The two heavy ones look like account setup plus an intent, the light one
+like a single simple intent. Taking the heavy figure for a create plus
+grant and the light one for a revoke gives 665,858 gas for the pair, which
+is 0.0000333 BNB at today's price.
+
+That is a measurement of other people's transactions, not of ours, so it is
+evidence rather than proof. It is the right order of magnitude and it
+replaces having no number at all. It will be replaced by our own figure the
+first time a grant of ours succeeds.
+
+### Recovering an Altana wallet, and why it matters before funding one
+
+The wallet's authority is a passkey, so the private half normally never
+leaves the authenticator. Funding a wallet whose passkey lives in a
+throwaway browser profile would strand whatever is left after the fee.
+
+A virtual authenticator can be exported. Chrome DevTools Protocol
+`WebAuthn.getCredentials` returns each credential including its private key,
+and `WebAuthn.addCredential` puts one back into a fresh authenticator. Saved
+alongside the wallet record the app keeps (the address and the credential's
+public half), that is enough to reconstruct the same wallet in a later
+session, which makes revoking later possible and makes leftover funds
+reachable rather than lost.
+
+The exported credential is the wallet's authority and has to be handled the
+way a private key is handled: outside the repository, never committed.
