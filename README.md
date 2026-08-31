@@ -4,7 +4,7 @@
 
 An ERC-8004 agent marketplace for BNB Smart Chain that tells you which agents are actually alive, which reviews are worth believing, and lets you hire through ERC-8183 escrow.
 
-Built for the BNB Chain "Build the Era" hackathon. `SPEC.md` is the source of truth for the build. `docs/VERIFICATION.md` records what was checked against live sources before any code was written.
+Built for the BNB Chain "Build the Era" hackathon. `docs/VERIFICATION.md` records what was checked against live sources before any code was written.
 
 ## The problem
 
@@ -220,8 +220,28 @@ render.yaml       one click deploy for the two agents, so the registry has a car
 
 ## Status
 
-Milestones M0 through M3, M5 and M6 are done and gated: `make verify` exits 0, and M6 now holds against mainnet rather than a dev chain.
+`make verify` exits 0, and the gate holds against mainnet rather than a dev chain.
 
-Also done: the zero dead ends pass, eighteen states walked with seven fixed (`docs/DEAD_ENDS.md`), and cold start inside the spec's five minute budget, measured at 89 seconds from a clean container.
+Live and checkable right now:
 
-Not done yet: the Altana session track (the page, the scoped permissions and the revoke path are written and type check, and no grant has ever been signed), the x402 metered path (not started, and first on the spec's own cut list), the advantage report, judge mode, a hosted deployment of the app itself, and the demo video. `docs/SUBMISSION.md` is the honest row by row state and `SPEC.md` Section 21 has the full plan.
+| | |
+|---|---|
+| Marketplace | https://trustlistapp.vercel.app |
+| API | https://trustlist-api.onrender.com/v1/health |
+| Contracts on BSC mainnet | three, all with verified source |
+| Merkle roots published on chain | one, over 40,004 scored agents |
+| Hires completed through ERC-8183 escrow | four: jobs 56675, 56676, 56677, 56678 |
+| Mainnet transactions, every one logged | 18 |
+| Dead end states walked by hand | 18, of which 7 were broken and are fixed |
+| Cold start from a clean container | 89 seconds, against a 300 second budget |
+
+Not done, stated plainly:
+
+- **No Altana session grant has ever been signed.** The page, the scoped
+  permissions and the revoke path are written and type check, the relay
+  answers, and the wallet is created and proven recoverable. It holds no
+  BNB, so nothing exists on chain and the session journey skips for that
+  reason rather than passing quietly.
+- **No x402 metered path.** Not started. Both our agents declare
+  `x402Support: false`, which is the truth.
+- **No judge mode, no stranger test with outside users, and no demo video.**

@@ -19,12 +19,12 @@ Last updated 31 August 2026.
 | Golden journeys | all 5 written, 4 pass, journey 02 skips because the Altana wallet is unfunded |
 | Contracts deployed to BSC mainnet | done, all three, 31 August 2026 |
 | Contracts verified on BscScan | done, both with published source, confirmed by reading them back from the API |
-| Two mainnet transactions inside the window | done, `hire` and `accept` on HireRail, job 56675 completed with escrow released. Nine transactions logged in `scripts/tx_log.md` |
+| Two mainnet transactions inside the window | done, four hires ran the full escrow lifecycle: jobs 56675, 56676, 56677 and 56678, each hired, delivered, accepted and released. Eighteen transactions logged in `scripts/tx_log.md` |
 | Altana session and revoke hashes | **not done**, zero grants ever signed. The page and scoped permissions are written and type check, the relay is answering again, the wallet needs BNB |
 | x402 metered path | **not done**, not started. Both our agents declare `x402Support: false`, which is the truth |
 | `docs/ADVANTAGE_REPORT.md` with three real tasks | done, three tasks measured both ways with real mainnet job ids 56676, 56677 and 56678 |
 | Judge mode | **not done** |
-| Live deployment URL | **not done**, local only |
+| Live deployment URL | done, marketplace at https://trustlistapp.vercel.app and API at https://trustlist-api.onrender.com, both answering |
 | The mainnet plan rehearsed end to end on a fork | done, `scripts/mainnet_rehearsal.sh` passes: deploy, register, hire, submit, accept, escrow released |
 | Cold start test in a fresh container | done, 89s and 150s on two runs against the spec's 300s budget, nightly CI job |
 | Stranger test with three people | **not done** |
