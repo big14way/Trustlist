@@ -29,6 +29,7 @@ jobs:
             ["api"]="https://trustlist-api.onrender.com/v1/health"
             ["yield scout"]="https://trustlist-yield-scout.onrender.com/health"
             ["range keeper"]="https://trustlist-range-keeper.onrender.com/health"
+            ["token screen"]="https://trustlist-token-screen.onrender.com/health"
           )
           FAILED=0
           for name in "${!TARGETS[@]}"; do
