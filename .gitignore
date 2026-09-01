@@ -32,4 +32,4 @@ web/.next-prod/
 .devchain.env
 
 # The Altana wallet credential. This file is the wallet.
-.altana-wallet.json
+.altana-wallet*.json

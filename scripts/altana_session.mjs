@@ -220,9 +220,13 @@ async function check() {
     console.log(`gas balance     ${bal || "(not shown)"}`);
     console.log(`grant control   ${grantable ? "present" : "ABSENT"}`);
     console.log(`page error      ${err ?? "none"}`);
-    const ready = stored?.address === saved.address && grantable && !/^0(\.0+)? BNB$/.test(bal);
+    // Match the number, not the ticker. Mainnet renders "BNB" and testnet
+    // "tBNB", and keying on the ticker reported a zero balance as ready.
+    const amount = Number.parseFloat(bal);
+    const funded = Number.isFinite(amount) && amount > 0;
+    const ready = stored?.address === saved.address && grantable && funded;
     console.log(`\nready to grant  ${ready}`);
-    if (!ready && /^0(\.0+)? BNB$/.test(bal)) console.log("(fund the wallet address above, then re-run check)");
+    if (!funded) console.log("(no gas: fund the wallet address above, then re-run check)");
     return ready;
   });
 }
