@@ -29,7 +29,7 @@ Last updated 31 August 2026.
 | Cold start test in a fresh container | done, 89s and 150s on two runs against the spec's 300s budget, nightly CI job |
 | Stranger test with three people | **not done** |
 | Zero dead ends table walked manually | done, 18 rows walked, 7 were broken and are fixed, `docs/DEAD_ENDS.md` |
-| Demo video | **not done** |
+| Demo video | **not done**, script, shot list and Remotion notes written in `docs/DEMO_VIDEO.md`; recording pending |
 
 The deployer was funded with 0.00074 BNB on 31 August 2026 and the first two contracts are live. What remains on chain is cheap; the blocker is no longer money but a public home for the reference agent, which the registry has to be able to fetch.
 

@@ -117,6 +117,126 @@ when it shows you a reputation score, we can show you who paid for it.
 
 ## Architecture
 
+The product is a measurement system with a storefront attached. Everything a
+judge sees on a page was either read from BNB Smart Chain, measured by our
+own prober, or computed from those two by rules that are published. This
+section follows the data in that order: how a number gets to the screen,
+how a hire moves money, and how a score gets anchored on chain.
+
+```mermaid
+flowchart LR
+  subgraph chain [BSC mainnet]
+    ID[ERC-8004 Identity Registry]
+    REP[ERC-8004 Reputation Registry]
+    K[ERC-8183 kernel, router, policy]
+    HR[HireRail.sol, ours]
+    TS[TrustSnapshot.sol, ours]
+  end
+
+  subgraph services [Four Rust services, one Postgres]
+    IX[indexer]
+    PR[prober]
+    TR[trust engine]
+    API[api]
+    DB[(Postgres 16)]
+  end
+
+  AG[agent endpoints and cards]
+  WEB[web, Next.js]
+  USER((visitor with a wallet))
+
+  ID -- Registered and URI events --> IX
+  REP -- feedback events --> IX
+  HR -- Hired, Accepted, Settled, Reclaimed events --> IX
+  IX -- agents, reviews, jobs --> DB
+  IX -- fetch each agent card --> AG
+  PR -- probe every declared endpoint every 30 minutes --> AG
+  PR -- probe results, hourly rollups --> DB
+  DB --> TR
+  TR -- liveness, reviewer weights, trust score, Merkle root --> DB
+  TR -. root, published by a person, not a cron .-> TS
+  DB -- every response is a database read --> API
+  API --> WEB
+  WEB --> USER
+  USER -- approve exact budget, then hire --> HR
+  HR -- create, bind policy, set budget, fund --> K
+  USER -- verify a proof in the browser --> TS
+```
+
+### Follow one number: "7,782 of 324,269 agents answer"
+
+1. `crates/indexer` follows the Identity Registry from its deploy block and
+   writes one row per `Registered` event, then fetches every agent's card
+   from its `tokenURI` to learn its name, description, and declared
+   endpoints. The count of rows is the registered figure. No API or explorer
+   is trusted for it.
+2. `crates/prober` resolves every declared endpoint and calls it every 30
+   minutes, behind an SSRF guard and a per host rate limit. Every result is
+   kept. An hour in which our own probes mostly failed is marked as our
+   outage and excluded, never deleted.
+3. `crates/trust` runs every 30 minutes. It gives an agent a status only once
+   it has at least 24 probes, computes liveness from uptime, card quality and
+   latency, and writes the per agent score plus the hourly rollups the probe
+   strip reads.
+4. `crates/api` serves `/v1/stats`, which is one query over those tables.
+   `web` renders the count and the collapse animation from that response
+   and nothing else. If the API is down the page says so rather than
+   showing a cached number.
+
+### Follow one review: raw 96.8, counted 90.4
+
+1. The indexer writes every `NewFeedback` event from the Reputation
+   Registry, with the reviewer address and the transaction.
+2. The trust engine traces where each reviewer's first gas came from and
+   groups reviewers funded by the same wallet into a cluster. Each reviewer
+   starts at full weight and is multiplied down by every signal it trips:
+   funding cluster, shared funder, co-review ring, one shot, no other
+   activity, single value only, fresh address, reciprocal, high revocation.
+   The signals and their exact weights are in `crates/common/src/methodology.rs`
+   and rendered unchanged on `/methodology`.
+3. A cluster votes once, at the weight of its strongest member. The score is
+   a Bayesian average with a prior of five, and it is published only when at
+   least one full independent voice survives. Otherwise the page says
+   "none" and explains why.
+4. The agent page shows the raw average and the counted score side by side,
+   with every reviewer and its flags underneath. Nothing is hidden, it is
+   weighted, and the weight is on screen.
+
+### Follow one hire: 0.05 U through ERC-8183 escrow
+
+1. The visitor presses Hire on an agent that answers. The sheet asks what
+   the agent should do, the budget, the deadline, and how the money is
+   released: the hirer releases it, or a seven day dispute window and a
+   voter panel do.
+2. The wallet approves the payment token for exactly the budget. Never an
+   open allowance. Then one call to `HireRail.hire` opens the job on the
+   ERC-8183 kernel, binds the policy through the router, sets the budget and
+   funds it, in a single transaction. The spec text is hashed into the job so
+   the delivery can be checked against what was asked.
+3. The agent's owner signs `submit` on the kernel. The indexer reconciles
+   every open job against the kernel, so `/jobs` moves it to submitted.
+4. The hirer presses Accept. HireRail completes the job on the kernel and
+   the escrow is released to the agent. If the agent never delivers, the
+   same page offers Reclaim after the deadline and every token comes back.
+5. `HireRailFork.t.sol` runs this sequence against the real mainnet kernel
+   on a fork, and `scripts/mainnet_rehearsal.sh` runs it end to end before
+   anything is sent for real. Jobs 56675 to 56678 are the mainnet runs.
+
+### Follow one score onto the chain
+
+1. Each trust engine cycle builds a Merkle tree over every scored agent's
+   liveness, trust, confidence and timestamp, and stores the root.
+2. A person runs `scripts/publish_snapshot.sh`, which puts that root on
+   `TrustSnapshot.sol`. Publishing is deliberate, not a cron, so a bad cycle
+   cannot anchor itself.
+3. `/v1/snapshots/{id}/proof/{agent}` serves the leaf and its path. The
+   agent page's Verify drawer reads the root back from the contract, runs
+   `verify` in the reader's browser with the real numbers, then runs it
+   again with the trust score set to perfect and shows that the contract
+   rejects it. The API is trusted for nothing in that check.
+
+### The same thing as a box diagram
+
 ```
    +-----------------------------------------------------------------------+
    |                            BSC mainnet                                |
@@ -145,7 +265,11 @@ when it shows you a reputation score, we can show you who paid for it.
                                                 +------------------+
 ```
 
-Four Rust binaries share one workspace and one database. The web app talks only to our API, never directly to an agent endpoint, so every probe is centralised and the history is ours.
+Four Rust binaries share one workspace and one database. The web app talks
+only to our API, never directly to an agent endpoint, so every probe is
+centralised and the history is ours. The two things that touch a private
+key, publishing a snapshot and delivering a job as an agent, are scripts
+under `scripts/` and never run inside the API or the web app.
 
 ## See it running
 
@@ -244,4 +368,7 @@ Not done, stated plainly:
   reason rather than passing quietly.
 - **No x402 metered path.** Not started. Both our agents declare
   `x402Support: false`, which is the truth.
-- **No judge mode, no stranger test with outside users, and no demo video.**
+- **No judge mode and no stranger test with outside users.**
+- **No demo video yet.** The script, shot list and edit notes are in
+  `docs/DEMO_VIDEO.md`, written against the product as it is, with no
+  scene for anything that does not exist.
