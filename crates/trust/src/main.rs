@@ -143,6 +143,70 @@ on conflict (id) do update set
   largest_cluster_reviewers = excluded.largest_cluster_reviewers,
   largest_cluster_reviews = excluded.largest_cluster_reviews";
 
+// ---------------------------------------------------------------------------
+// Probe rollups
+//
+// Every probe figure the site shows is an aggregate: the strip is 168 hourly
+// buckets, the endpoint panel is the latest probe per endpoint plus a 7 day
+// count. Computing those from the raw table on every request meant the raw
+// table had to exist wherever the API runs, and a 7 day window of it is about
+// 740 MB, which does not fit the hosted database. Precomputing here lets the
+// hosted copy carry the full 7 days in roughly a fifth of the space.
+//
+// Rebuilt whole rather than updated incrementally. The window slides, so old
+// buckets leave it every hour, and a full rebuild of about 1.4 million rows
+// is quick and cannot drift from the raw table the way a patched one can.
+// ---------------------------------------------------------------------------
+
+/// Hours where nearly every probe failed at once are our outage, not the
+/// agents'. Recording the verdict means the hosted copy blanks exactly the
+/// hours local does, instead of re-deciding it from rows it no longer holds.
+const OUTAGE_SQL: &str = "
+insert into probe_observer_outage (hour)
+select date_trunc('hour', probed_at)
+from probe_results
+where probed_at > now() - interval '7 days'
+group by 1
+having count(*) > 100 and avg(ok::int) < 0.05";
+
+/// Counts, not an average. The API divides, and a stored average could not be
+/// recombined correctly if buckets are ever merged.
+const HOURLY_SQL: &str = "
+insert into probe_hourly (agent_id, hour, probes, ok_count)
+select agent_id, date_trunc('hour', probed_at), count(*),
+       count(*) filter (where ok)
+from probe_results
+where probed_at > now() - interval '7 days'
+group by 1, 2";
+
+/// Two aggregates over probe_results joined to the schedule, rather than two
+/// lateral lookups per scheduled endpoint. Same rows out. The lateral form
+/// read naturally and matched the query it replaced, but the planner ran it
+/// per endpoint and took over ten minutes for 112,835 rows against twenty
+/// seconds for this. A rebuild that runs every pass has to be cheap.
+const ENDPOINT_RECENT_SQL: &str = "
+insert into probe_endpoint_recent (
+  agent_id, endpoint_url, probed_at, ok, http_status, latency_ms,
+  failure_kind, probes_7d, ok_7d)
+select s.agent_id, s.endpoint_url,
+       l.probed_at, l.ok, l.http_status, l.latency_ms, l.failure_kind,
+       coalesce(a.probes, 0), coalesce(a.ok_count, 0)
+from probe_schedule s
+left join (
+  select distinct on (agent_id, endpoint_url)
+         agent_id, endpoint_url, probed_at, ok, http_status,
+         latency_ms, failure_kind
+  from probe_results
+  order by agent_id, endpoint_url, probed_at desc
+) l on l.agent_id = s.agent_id and l.endpoint_url = s.endpoint_url
+left join (
+  select agent_id, endpoint_url, count(*) as probes,
+         count(*) filter (where ok) as ok_count
+  from probe_results
+  where probed_at > now() - interval '7 days'
+  group by 1, 2
+) a on a.agent_id = s.agent_id and a.endpoint_url = s.endpoint_url";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     common::handle_version_flag("trust");
@@ -195,6 +259,13 @@ async fn one_pass(pool: &PgPool) -> anyhow::Result<()> {
         Err(e) => {
             tracing::error!(%e, "scoring pass failed");
             failures.push(format!("scoring pass: {e}"));
+        }
+    }
+    match refresh_rollups(pool).await {
+        Ok(rows) => tracing::info!(rows, "probe rollups rebuilt"),
+        Err(e) => {
+            tracing::error!(%e, "probe rollup rebuild failed");
+            failures.push(format!("probe rollups: {e}"));
         }
     }
     match refresh_stats(pool).await {
@@ -359,6 +430,29 @@ async fn build_snapshot(pool: &PgPool) -> anyhow::Result<Option<(i64, String, us
 async fn refresh_stats(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query(STATS_SQL).execute(pool).await?;
     Ok(())
+}
+
+/// Rebuild the three probe rollups the API reads.
+///
+/// One transaction, so a reader never sees a half-filled strip: either the
+/// previous rollup or the new one, never a truncated table mid-rebuild.
+async fn refresh_rollups(pool: &PgPool) -> anyhow::Result<u64> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("truncate probe_observer_outage")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(OUTAGE_SQL).execute(&mut *tx).await?;
+    sqlx::query("truncate probe_hourly").execute(&mut *tx).await?;
+    let hourly = sqlx::query(HOURLY_SQL)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    sqlx::query("truncate probe_endpoint_recent")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(ENDPOINT_RECENT_SQL).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(hourly)
 }
 
 /// Assign categories from the text an agent's own owner wrote in its card.

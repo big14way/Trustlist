@@ -317,23 +317,26 @@ pub async fn agent_uptime(
         return Err(StatusCode::BAD_REQUEST);
     }
     let rows: Vec<(chrono::DateTime<chrono::Utc>, Option<f64>, i64)> = sqlx::query_as(
-        "with observer_outage as (
-           select date_trunc('hour', probed_at) as h from probe_results
-           where probed_at > now() - interval '7 days'
-           group by 1 having count(*) > 100 and avg(ok::int) < 0.05
-         )
-         select h.hour,
-                case when h.hour in (select h from observer_outage) then null
-                     else avg(pr.ok::int)::float8 end,
-                case when h.hour in (select h from observer_outage) then 0
-                     else count(pr.id) end
+        // Reads the hourly rollup rather than the raw probe table. Same
+        // answer: the rollup stores the probe and ok counts per hour, so the
+        // ratio here is the average this used to compute directly. The raw
+        // table is 740 MB for this window and the hosted database cannot hold
+        // it, which is why the aggregate exists.
+        "select h.hour,
+                case when o.hour is not null or coalesce(ph.probes, 0) = 0
+                     then null
+                     else ph.ok_count::float8 / ph.probes end,
+                -- bigint: the rollup stores int4 but this used to be a
+                -- count(), and the decoder expects the wider type.
+                case when o.hour is not null then 0
+                     else coalesce(ph.probes, 0) end::bigint
          from generate_series(
                 date_trunc('hour', now()) - interval '167 hours',
                 date_trunc('hour', now()), interval '1 hour') h(hour)
-         left join probe_results pr
-           on pr.agent_id = $1::numeric
-          and pr.probed_at >= h.hour and pr.probed_at < h.hour + interval '1 hour'
-         group by h.hour order by h.hour",
+         left join probe_hourly ph
+           on ph.agent_id = $1::numeric and ph.hour = h.hour
+         left join probe_observer_outage o on o.hour = h.hour
+         order by h.hour",
     )
     .bind(&clean)
     .fetch_all(&state.pool)
@@ -379,15 +382,21 @@ pub async fn bulk_uptime(
         return Err(StatusCode::BAD_REQUEST);
     }
     let rows: Vec<(String, chrono::DateTime<chrono::Utc>, Option<f64>, i64)> = sqlx::query_as(
-        "select a.id::text, h.hour, avg(pr.ok::int)::float8, count(pr.id)
+        // Same rollup as the single agent strip above. This one deliberately
+        // keeps its own bucket window and its lack of observer outage
+        // blanking, so switching the source changes nothing a visitor sees.
+        // Both differences from the single agent query predate this change
+        // and are noted in docs/DEAD_ENDS.md.
+        "select a.id::text, h.hour,
+                case when coalesce(ph.probes, 0) = 0 then null
+                     else ph.ok_count::float8 / ph.probes end,
+                coalesce(ph.probes, 0)::bigint
          from unnest($1::numeric[]) as a(id)
          cross join generate_series(
                 date_trunc('hour', now()) - interval '168 hours',
                 date_trunc('hour', now()) - interval '1 hour', interval '1 hour') h(hour)
-         left join probe_results pr
-           on pr.agent_id = a.id
-          and pr.probed_at >= h.hour and pr.probed_at < h.hour + interval '1 hour'
-         group by 1, 2 order by 1, 2",
+         left join probe_hourly ph on ph.agent_id = a.id and ph.hour = h.hour
+         order by 1, 2",
     )
     .bind(&ids)
     .fetch_all(&state.pool)
@@ -510,23 +519,17 @@ pub async fn agent_endpoints(
         return Err(StatusCode::BAD_REQUEST);
     }
     let rows = sqlx::query(
+        // The two lateral joins this replaces did the same work per request:
+        // newest probe per endpoint, plus its 7 day totals. Both are now
+        // precomputed, one row per scheduled endpoint.
         "select s.endpoint_url, s.kind, s.cadence_secs, s.next_due,
-                last.probed_at, last.ok, last.http_status, last.latency_ms,
-                last.failure_kind,
-                agg.probes, agg.ok_count
+                r.probed_at, r.ok, r.http_status, r.latency_ms,
+                r.failure_kind,
+                coalesce(r.probes_7d, 0) as probes,
+                coalesce(r.ok_7d, 0) as ok_count
          from probe_schedule s
-         left join lateral (
-           select probed_at, ok, http_status, latency_ms, failure_kind
-           from probe_results r
-           where r.agent_id = s.agent_id and r.endpoint_url = s.endpoint_url
-           order by probed_at desc limit 1
-         ) last on true
-         left join lateral (
-           select count(*) as probes, count(*) filter (where ok) as ok_count
-           from probe_results r
-           where r.agent_id = s.agent_id and r.endpoint_url = s.endpoint_url
-             and r.probed_at > now() - interval '7 days'
-         ) agg on true
+         left join probe_endpoint_recent r
+           on r.agent_id = s.agent_id and r.endpoint_url = s.endpoint_url
          where s.agent_id = $1::numeric
          order by s.kind, s.endpoint_url",
     )

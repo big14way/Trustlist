@@ -10,14 +10,18 @@
 #   agent_scores      the newest row per agent only. The local table keeps
 #                     every scoring pass ever run, 22.8 million rows for
 #                     81,097 agents, and the site only ever reads the latest
-#   probe_results     a recent window, because the probe strip draws 7 days
-#                     and nothing on the site looks further back
+#   probe_results     not copied at all. Every probe figure the site shows is
+#                     an aggregate, and the rollups below hold those answers
+#                     in a fifth of the space. 7 days of raw rows is about
+#                     740 MB and does not fit
+#   probe_hourly      the 168 hourly buckets the probe strip draws, so the
+#   probe_endpoint_*  hosted site serves the full week rather than a stub
 #   the trust tables  in full, they are small
 #
 # Nothing is invented and nothing is rounded. This is the same data, with
 # history the site never reads left behind.
 #
-# Usage: scripts/sync_prod_db.sh [--probe-days N] [--yes]
+# Usage: scripts/sync_prod_db.sh [--yes]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,13 +29,11 @@ cd "$(dirname "$0")/.."
 source scripts/env.sh
 load_env_files
 
-PROBE_DAYS=7
 ASSUME_YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --probe-days) PROBE_DAYS=$2; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 1 ;;
   esac
 done
@@ -58,34 +60,26 @@ echo "  hosted agents $REMOTE_BEFORE (before)"
 # about 2.0 million rows at roughly 360 bytes on disk, some 740 MB, against a
 # 1 GB hosted database already holding 370 MB of everything else. The copy
 # truncated first, ran out of disk halfway, and left the site with no probe
-# history and a stale registry_stats. Measuring before truncating is the
-# difference between "this will not fit, pick a smaller window" and an
-# outage.
+# history, a stale registry_stats and a suspended database. Measuring before
+# truncating is the difference between a refusal and an outage.
 say "will it fit"
-BYTES_PER_PROBE=$(lpsql -tAc "
-  select ceil(pg_total_relation_size('probe_results')::numeric
-              / greatest(count(*),1))::bigint from probe_results")
-PROBE_ROWS=$(lpsql -tAc "
-  select count(*) from probe_results
-  where probed_at > now() - interval '$PROBE_DAYS days'")
+# Everything that lands, sized from the local tables it is copied from.
+# agent_scores is the exception: only the newest row per agent is sent, so its
+# local size (millions of historical passes) is not what arrives.
 OTHER_BYTES=$(lpsql -tAc "
   select coalesce(sum(pg_total_relation_size(relid)),0)::bigint
   from pg_stat_user_tables
-  where relname not in ('probe_results','_sqlx_migrations','seed_agents')
-    and relname not like 'agent_scores'")
-# agent_scores is copied newest-row-per-agent, so its local size is not what
-# lands. Size it from the row count we will actually send.
+  where relname not in ('probe_results','agent_scores',
+                        '_sqlx_migrations','seed_agents')")
 SCORE_ROWS=$(lpsql -tAc "select count(distinct agent_id) from agent_scores")
-NEED=$(( PROBE_ROWS * BYTES_PER_PROBE + OTHER_BYTES + SCORE_ROWS * 180 ))
+NEED=$(( OTHER_BYTES + SCORE_ROWS * 180 ))
 CAP_BYTES=${PROD_DB_CAPACITY_BYTES:-1073741824}
 # Leave headroom: Postgres needs room for WAL, indexes built during COPY, and
 # the dead pages a truncate does not return until vacuum.
 BUDGET=$(( CAP_BYTES * 75 / 100 ))
-printf '  probe rows (%sd)  %s at ~%s bytes\n' "$PROBE_DAYS" "$PROBE_ROWS" "$BYTES_PER_PROBE"
 printf '  estimated total   %s MB\n' "$(( NEED / 1048576 ))"
 printf '  usable budget     %s MB of %s MB\n' "$(( BUDGET / 1048576 ))" "$(( CAP_BYTES / 1048576 ))"
 if [ "$NEED" -gt "$BUDGET" ]; then
-  FITS=$(( (BUDGET - OTHER_BYTES - SCORE_ROWS * 180) / BYTES_PER_PROBE ))
   cat >&2 <<EOF
 
 This will not fit, so nothing has been touched.
@@ -93,11 +87,14 @@ This will not fit, so nothing has been touched.
   needs  $(( NEED / 1048576 )) MB
   budget $(( BUDGET / 1048576 )) MB
 
-About $FITS probe rows fit. Re-run with a smaller window, for example:
+The largest copied tables are:
 
-  scripts/sync_prod_db.sh --probe-days 2
+$(lpsql -tAc "select '    ' || relname || '  ' || pg_size_pretty(pg_total_relation_size(relid))
+  from pg_stat_user_tables
+  where relname not in ('probe_results','agent_scores','_sqlx_migrations','seed_agents')
+  order by pg_total_relation_size(relid) desc limit 5")
 
-or raise the ceiling with PROD_DB_CAPACITY_BYTES if the plan has more room.
+Raise the ceiling with PROD_DB_CAPACITY_BYTES if the plan has more room.
 EOF
   exit 1
 fi
@@ -137,16 +134,12 @@ docker compose exec -T db sh -c "psql '$PROD_DATABASE_URL' -v ON_ERROR_STOP=1 -q
 rm -f /tmp/latest_scores.tsv
 echo "  copied $(rpsql -tAc 'select count(*) from agent_scores')"
 
-say "probe history, last $PROBE_DAYS days"
+# probe_results is deliberately not copied. The rollups that replace it are
+# picked up by the derived table list below, the same mechanism that stopped
+# registry_stats being forgotten.
+say "probe history"
 rpsql -q -c "truncate probe_results"
-lpsql -tAc "copy (
-  select * from probe_results
-  where probed_at > now() - interval '$PROBE_DAYS days'
-) to stdout" > /tmp/probes.tsv
-wc -l < /tmp/probes.tsv | sed 's/^/  rows: /'
-docker compose exec -T db sh -c "psql '$PROD_DATABASE_URL' -v ON_ERROR_STOP=1 -q -c '\\copy probe_results from stdin'" < /tmp/probes.tsv
-rm -f /tmp/probes.tsv
-echo "  copied $(rpsql -tAc 'select count(*) from probe_results')"
+echo "  raw probes left behind, the rollups carry the same answers"
 
 say "trust, snapshots and indexer state"
 # registry_stats is the one the homepage reads for every headline number,
@@ -170,7 +163,8 @@ done
 say "what the hosted site will report"
 rpsql -tAc "select 'agents', count(*) from agents
   union all select 'scored', count(*) from agent_scores
-  union all select 'probes', count(*) from probe_results
+  union all select 'strip hrs', count(*) from probe_hourly
+  union all select 'endpoints', count(*) from probe_endpoint_recent
   union all select 'feedback', count(*) from feedback" \
   | while IFS='|' read -r k v; do printf '  %-10s %s\n' "$k" "$v"; done
 echo "  size      $(rpsql -tAc "select pg_size_pretty(pg_database_size(current_database()))")"
