@@ -52,6 +52,57 @@ rpsql -tAc "select 1" >/dev/null || { echo "cannot reach the hosted database" >&
 REMOTE_BEFORE=$(rpsql -tAc "select count(*) from agents")
 echo "  hosted agents $REMOTE_BEFORE (before)"
 
+# Will it fit?
+#
+# This check exists because the answer once was no. A 7 day probe window is
+# about 2.0 million rows at roughly 360 bytes on disk, some 740 MB, against a
+# 1 GB hosted database already holding 370 MB of everything else. The copy
+# truncated first, ran out of disk halfway, and left the site with no probe
+# history and a stale registry_stats. Measuring before truncating is the
+# difference between "this will not fit, pick a smaller window" and an
+# outage.
+say "will it fit"
+BYTES_PER_PROBE=$(lpsql -tAc "
+  select ceil(pg_total_relation_size('probe_results')::numeric
+              / greatest(count(*),1))::bigint from probe_results")
+PROBE_ROWS=$(lpsql -tAc "
+  select count(*) from probe_results
+  where probed_at > now() - interval '$PROBE_DAYS days'")
+OTHER_BYTES=$(lpsql -tAc "
+  select coalesce(sum(pg_total_relation_size(relid)),0)::bigint
+  from pg_stat_user_tables
+  where relname not in ('probe_results','_sqlx_migrations','seed_agents')
+    and relname not like 'agent_scores'")
+# agent_scores is copied newest-row-per-agent, so its local size is not what
+# lands. Size it from the row count we will actually send.
+SCORE_ROWS=$(lpsql -tAc "select count(distinct agent_id) from agent_scores")
+NEED=$(( PROBE_ROWS * BYTES_PER_PROBE + OTHER_BYTES + SCORE_ROWS * 180 ))
+CAP_BYTES=${PROD_DB_CAPACITY_BYTES:-1073741824}
+# Leave headroom: Postgres needs room for WAL, indexes built during COPY, and
+# the dead pages a truncate does not return until vacuum.
+BUDGET=$(( CAP_BYTES * 75 / 100 ))
+printf '  probe rows (%sd)  %s at ~%s bytes\n' "$PROBE_DAYS" "$PROBE_ROWS" "$BYTES_PER_PROBE"
+printf '  estimated total   %s MB\n' "$(( NEED / 1048576 ))"
+printf '  usable budget     %s MB of %s MB\n' "$(( BUDGET / 1048576 ))" "$(( CAP_BYTES / 1048576 ))"
+if [ "$NEED" -gt "$BUDGET" ]; then
+  FITS=$(( (BUDGET - OTHER_BYTES - SCORE_ROWS * 180) / BYTES_PER_PROBE ))
+  cat >&2 <<EOF
+
+This will not fit, so nothing has been touched.
+
+  needs  $(( NEED / 1048576 )) MB
+  budget $(( BUDGET / 1048576 )) MB
+
+About $FITS probe rows fit. Re-run with a smaller window, for example:
+
+  scripts/sync_prod_db.sh --probe-days 2
+
+or raise the ceiling with PROD_DB_CAPACITY_BYTES if the plan has more room.
+EOF
+  exit 1
+fi
+echo "  fits"
+
 if [ "$ASSUME_YES" != "1" ]; then
   printf '\nThis replaces the hosted contents with a copy of the local index. Continue? [y/N] '
   read -r a
