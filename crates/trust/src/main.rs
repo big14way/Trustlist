@@ -442,7 +442,9 @@ async fn refresh_rollups(pool: &PgPool) -> anyhow::Result<u64> {
         .execute(&mut *tx)
         .await?;
     sqlx::query(OUTAGE_SQL).execute(&mut *tx).await?;
-    sqlx::query("truncate probe_hourly").execute(&mut *tx).await?;
+    sqlx::query("truncate probe_hourly")
+        .execute(&mut *tx)
+        .await?;
     let hourly = sqlx::query(HOURLY_SQL)
         .execute(&mut *tx)
         .await?

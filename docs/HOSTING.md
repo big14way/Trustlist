@@ -19,22 +19,46 @@ Everything is on a free plan. Set up 31 August 2026.
 The local index is 6.4 GB. The hosted one holds what the site reads and
 nothing else, copied by `scripts/sync_prod_db.sh`:
 
-- **every agent**, all 321,772 of them, because the headline count has to be
+- **every agent**, all 324,395 of them, because the headline count has to be
   the real one and any agent page has to resolve
-- **the newest score per agent**, not the 22.8 million rows of scoring
+- **the newest score per agent**, not the 24.2 million rows of scoring
   history behind them, because no page reads history
-- **a recent window of probes**, because the probe strip draws seven days
+- **the probe rollups**, not the raw probes, see below
 - **the trust and snapshot tables in full**, they are small
 
-That comes to about 570 MB. Nothing is invented, nothing is rounded, and no
+That comes to about 500 MB. Nothing is invented, nothing is rounded, and no
 number on the hosted site differs from the number the local index would give
-for the same question.
+for the same question, with one bounded exception noted below.
 
 Refresh it before judging:
 
 ```
-bash scripts/sync_prod_db.sh --probe-days 7
+bash scripts/sync_prod_db.sh
 ```
+
+### Why the raw probes are not copied
+
+Every probe figure the site shows is already an aggregate. The strip is 168
+hourly buckets and the endpoint panel is the newest probe per endpoint plus a
+seven day tally. Seven days of raw rows behind those answers is 2.0 million
+rows, about 740 MB, and this database is 1 GB with 370 MB of other tables in
+it. It does not fit.
+
+So the trust engine precomputes the answers into `probe_hourly` (1,441,624
+rows, 128 MB), `probe_endpoint_recent` (112,835 rows) and
+`probe_observer_outage`, rebuilt in one transaction after each scoring pass.
+The hosted copy carries those instead and serves **the full seven days**. The
+alternative, copying a two day window of raw rows, would have quietly made
+the README's "168 real hours" false on the only deployment a judge opens.
+
+The switch was checked by running the old and the new API side by side
+against the same database. Five of six responses were byte for byte
+identical, both strip endpoints among them.
+
+**The one bounded exception**: the endpoint panel's seven day tally comes
+from a stored aggregate, so its window ends when the rollup was last built
+rather than now. The trust engine runs every 30 minutes, so that figure can
+lag by up to one pass. The strip itself is exact.
 
 The table list is derived from the schema rather than typed out. It was
 typed out once and `registry_stats` was left off it, which is where every
@@ -74,6 +98,36 @@ holding a share of it".
 **Keep the workspace small.** Adding unrelated free services back will bring
 this straight back, and it will look like our API breaking rather than like
 a quota.
+
+## The outage we caused ourselves
+
+On 1 September a sync filled the hosted database and Render suspended it. The
+API went from healthy to unreachable and the site served no data until the
+database was resumed.
+
+The cause was arithmetic nobody did. A seven day probe window is 2.0 million
+rows at roughly 360 bytes, about 740 MB, going into a 1 GB database that
+already held 370 MB. The script truncated first and copied second, so by the
+time the disk filled the old contents were already gone. It stopped partway
+through `probe_results`, which meant `registry_stats` was never reached and
+the site was left with new agents, no probe history and a stale header.
+
+Two fixes, both in `scripts/sync_prod_db.sh`:
+
+- **It measures before it truncates.** Real row counts times real bytes per
+  row, against 75 percent of the target's capacity, and it refuses with the
+  largest offending tables listed rather than touching anything.
+- **It no longer copies raw probes at all**, because the rollups above make
+  the question moot.
+
+The lesson worth keeping is narrower than "check disk space". It is that a
+destructive step ordered before its own precondition turns a refusal into an
+outage. Truncate last, or measure first.
+
+One process note: the failure was invisible for longer than it should have
+been because the run was piped through `tee`, so the reported exit status was
+`tee`'s and not the script's. The script's `set -euo pipefail` had aborted
+correctly all along.
 
 ## Cold starts are still real
 
