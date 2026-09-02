@@ -166,8 +166,10 @@ pub async fn list_agents(
                 coalesce(f.cnt, 0) as feedback_total
          from agents a
          {SCORE_JOIN}
-         left join (select agent_id, count(*) as cnt from feedback where not revoked group by agent_id) f
-           on f.agent_id = a.agent_id
+         left join lateral (
+           select count(*) as cnt from feedback f
+           where f.agent_id = a.agent_id and not f.revoked
+         ) f on true
          where {} and {}
          order by {}
          limit {}",
@@ -186,10 +188,16 @@ pub async fn list_agents(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let total_unfiltered: i64 = sqlx::query_scalar("select count(*) from agents")
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // The registered count the trust engine already keeps for the homepage.
+    // Counting the agents table on every listing request cost 2.4 seconds
+    // on the hosted database, for a number that changes once a pass.
+    let total_unfiltered: i64 = sqlx::query_scalar(
+        "select coalesce((select registered from registry_stats where id = 1),
+                         (select count(*) from agents))",
+    )
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let items: Vec<serde_json::Value> = rows.iter().map(agent_row_to_json).collect();
     let next_cursor = if items.len() as i64 == limit {
@@ -222,8 +230,10 @@ pub async fn get_agent(
                 coalesce(f.cnt, 0) as feedback_total
          from agents a
          {SCORE_JOIN}
-         left join (select agent_id, count(*) as cnt from feedback where not revoked group by agent_id) f
-           on f.agent_id = a.agent_id
+         left join lateral (
+           select count(*) as cnt from feedback f
+           where f.agent_id = a.agent_id and not f.revoked
+         ) f on true
          where a.agent_id = $1::numeric"
     );
     let row = sqlx::query(&sql)
@@ -410,7 +420,11 @@ pub async fn bulk_uptime(
          cross join generate_series(
                 date_trunc('hour', now()) - interval '168 hours',
                 date_trunc('hour', now()) - interval '1 hour', interval '1 hour') h(hour)
-         left join probe_hourly ph on ph.agent_id = a.id and ph.hour = h.hour
+         left join (
+           select agent_id, hour, probes, ok_count from probe_hourly
+           where agent_id = any($1::numeric[])
+             and hour >= date_trunc('hour', now()) - interval '168 hours'
+         ) ph on ph.agent_id = a.id and ph.hour = h.hour
          order by 1, 2",
     )
     .bind(&ids)

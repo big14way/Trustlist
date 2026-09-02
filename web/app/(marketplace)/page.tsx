@@ -196,7 +196,6 @@ export default async function Home({
   // An agent id is not a name to search for, it is an address to go to.
   if (/^\d+$/.test(q)) redirect(`/agents/${q}`);
 
-  const stats = await fetchStats();
   // Default marketplace filter: only agents whose status is earned by
   // enough probes appear. The measuring majority is a count, not a listing.
   const query = new URLSearchParams({ sort: "rank", limit: "24" });
@@ -206,7 +205,9 @@ export default async function Home({
   if (q) query.set("q", q);
   else query.set("status", showDormant ? "down,dormant" : "live,flaky");
   if (category) query.set("category", category);
-  const agents = await fetchAgents(query);
+  // The two calls do not depend on each other. In series, on the hosted
+  // API, they were the larger half of a thirteen second page.
+  const [stats, agents] = await Promise.all([fetchStats(), fetchAgents(query)]);
   const uptime =
     (await fetchUptime(agents?.items.map((a) => a.agent_id) ?? [])) ?? {};
 
