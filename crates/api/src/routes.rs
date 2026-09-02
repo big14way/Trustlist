@@ -114,11 +114,27 @@ pub async fn list_agents(
             .map(|s| s.trim().to_ascii_lowercase())
             .filter(|s| !s.is_empty())
             .collect();
+        // live, flaky and down exist only on a score row; the fallback in
+        // STATUS_SQL never produces them. For a filter made of those alone
+        // the plain column is the same predicate, and unlike the coalesce
+        // expression it lets the planner start from agent_latest's status
+        // index: 7,000 rows instead of every agent. That difference was 13
+        // seconds on the hosted database, and an empty public marketplace.
+        let score_only = list
+            .iter()
+            .all(|s| matches!(s.as_str(), "live" | "flaky" | "down"));
         binds.push(list.join(","));
-        wheres.push(format!(
-            "({STATUS_SQL}) = any(string_to_array(${}, ','))",
-            binds.len()
-        ));
+        if score_only {
+            wheres.push(format!(
+                "sc.status = any(string_to_array(${}, ','))",
+                binds.len()
+            ));
+        } else {
+            wheres.push(format!(
+                "({STATUS_SQL}) = any(string_to_array(${}, ','))",
+                binds.len()
+            ));
+        }
     }
 
     let order = match sort {
