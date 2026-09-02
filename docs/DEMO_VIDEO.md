@@ -147,8 +147,8 @@ name Yield Scout in scene 4 of the voice script; the rest stays true.
 
 ### 2.4 The numbers you will read
 
-The voice script carries the numbers the local index served on 1 September
-2026 at block 119,394,249. The registry moves, so before recording run this
+The voice script carries the numbers that are on screen in the recordings,
+read from the local index at block 119,425,420. The registry moves, so before recording run this
 and compare:
 
 ```
@@ -159,19 +159,20 @@ curl -s localhost:8080/v1/agents/137/reviews
 
 | spoken in the script | field or source | value in the script |
 |---|---|---|
-| registered agents | `registered` | 326,920 |
-| answer when probed | `live` plus `flaky` | 6,927 |
+| registered agents | `registered` | 327,046 |
+| answer when probed | `live` plus `flaky` | 6,726 |
 | share that answers | derived | 2.1 percent |
-| declare an endpoint | `with_endpoints` | 82,523 |
-| probes sent | `probes_total` | 4,607,950 |
+| declare an endpoint | `with_endpoints` | 83,806 |
+| probes sent | `probes_total` | 4,631,331 |
 | reviews on chain | `feedback` | 29,628 |
 | distinct reviewing wallets | `reviewers` | 109 |
 | independent reviewers | `reviewers_independent` | 31 |
+| reviews that survive weighting | `reviews_kept` | 1,041, 3.5 percent |
 | largest cluster | `largest_cluster_reviewers`, `largest_cluster_reviews` | 13 wallets, 13,103 reviews, 44 percent |
 | agent 137 raw average | `/v1/agents/137/reviews` `raw_average` | 96.8 |
 | agent 137 our score | `trust` | 90.4 |
 | agent 137 reviews kept | `kept` of `total` | 10 of 25 |
-| agent 137 probes and answer rate | `probes_7d`, `uptime_7d` | 571 probes, about 40 percent |
+| agent 137 probes and answer rate | `probes_7d`, `uptime_7d` | 567 probes, about 40 percent |
 | advantage task 1 | `docs/ADVANTAGE_REPORT.md` | 58.52 seconds and 44 lookups by hand, 6.87 seconds and 4 requests with the agent, 8.5 times faster |
 | advantage tasks 2 and 3 | same | 1.1 times and 1.7 times |
 | first mainnet hire | `scripts/tx_log.md` | job 56675, 31 August 2026 |
@@ -284,17 +285,17 @@ letter. "PancakeSwap" is one word.
 
 Scene one.
 
-B N B Smart Chain has three hundred and twenty six thousand registered agents. Six thousand nine hundred of them answered when we called. That is two percent. The rest is a name and a wallet address.
+B N B Smart Chain has three hundred and twenty seven thousand registered agents. Six thousand seven hundred of them answered when we called. That is two percent. The rest is a name and a wallet address.
 
 Scene two.
 
-We know, because we probe every declared endpoint every thirty minutes, and we keep the history. Four point six million probes so far. Eighty two thousand agents declare an endpoint at all. Nothing on this page comes from anyone else's dashboard.
+We know, because we probe every declared endpoint every thirty minutes, and we keep the history. Four point six million probes so far. Eighty three thousand agents declare an endpoint at all. Nothing on this page comes from anyone else's dashboard.
 
-The reviews are worse. Twenty nine thousand reviews on chain, written by one hundred and nine wallets. Thirteen of those wallets were funded from the same place, and between them they wrote forty four percent of every review on the registry. Thirty one reviewers, out of one hundred and nine, are independent.
+The reviews are worse. Twenty nine thousand reviews on chain, written by one hundred and nine wallets. Only one thousand and forty one of those reviews, three and a half percent, survive our weighting. Thirteen of the wallets were funded from the same place, and between them they wrote forty four percent of every review on the registry. Thirty one reviewers, out of one hundred and nine, are independent.
 
 Scene three.
 
-Here is what that does to a single agent. Agent one hundred and thirty seven has a raw review average of ninety six point eight. Any marketplace ranking on reviews puts it near the top. We probed it five hundred and seventy one times, and it answered about forty percent of them. When we drop the reviewers who cannot be shown to be independent, ten of its twenty five reviews survive. Our score is ninety point four, and its status is down.
+Here is what that does to a single agent. Agent one hundred and thirty seven has a raw review average of ninety six point eight. Any marketplace ranking on reviews puts it near the top. We probed it five hundred and sixty seven times, and it answered about forty percent of them. When we drop the reviewers who cannot be shown to be independent, ten of its twenty five reviews survive. Our score is ninety point four, and its status is down.
 
 We show both numbers, side by side, and every reviewer with the reason it was weighted. Nothing is deleted. It is weighted, and you can see the weight.
 
