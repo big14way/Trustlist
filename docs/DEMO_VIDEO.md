@@ -392,8 +392,11 @@ the thirty first of August." Everything else in the script stays true.
 
 ## 7. After recording
 
-- Put the finished video somewhere that survives the deployment dying:
-  the repository release assets, and a second host. SPEC 30.7.
-- Link it from `docs/SUBMISSION.md` and change the "Demo video" row from
-  not done to done, with the URL.
-- Delete the imported deployer account from the recording browser profile.
+The finished film is at https://youtu.be/uz_JkGss904, 4 minutes 19 seconds,
+uploaded 2 September 2026 and linked from `docs/SUBMISSION.md` and the
+README. The rendered file and the recordings stay out of the repository;
+`video/` holds everything needed to render it again from the clips.
+
+Still to do: keep a second copy somewhere that survives the deployment
+dying (SPEC 30.7), and delete the imported deployer account from the
+recording browser profile.

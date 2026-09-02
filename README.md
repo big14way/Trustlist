@@ -351,6 +351,7 @@ Live and checkable right now:
 | | |
 |---|---|
 | Marketplace | https://trustlistapp.vercel.app |
+| Demo video | https://youtu.be/uz_JkGss904 |
 | API | https://trustlist-api.onrender.com/v1/health |
 | Contracts on BSC mainnet | three, all with verified source |
 | Merkle roots published on chain | one, over 40,004 scored agents |
