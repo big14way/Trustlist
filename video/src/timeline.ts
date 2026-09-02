@@ -44,19 +44,19 @@ export const SCENES: Scene[] = [
     title: "Most agents are not there",
     segments: [{ clip: "s1", seconds: 14.2 }],
     audio: "scene1",
-    audioSeconds: 14.0,
+    audioSeconds: 12.72,
     overlays: [],
   },
   {
     id: 2,
     title: "Registry health",
-    segments: [{ clip: "s2", seconds: 34.8 }],
+    segments: [{ clip: "s2", seconds: 38.2 }],
     audio: "scene2",
-    audioSeconds: 34.75,
+    audioSeconds: 37.84,
     overlays: [
       {
         from: secs(17),
-        to: secs(34.8),
+        to: secs(38.2),
         kind: "lowerThird",
         lines: ["13 wallets. 13,103 reviews. 44 percent of all reputation on chain."],
       },
@@ -67,7 +67,7 @@ export const SCENES: Scene[] = [
     title: "Agent 137",
     segments: [{ clip: "s3", seconds: 38.2 }],
     audio: "scene3",
-    audioSeconds: 38.11,
+    audioSeconds: 37.6,
     overlays: [
       {
         from: secs(9),

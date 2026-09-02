@@ -65,7 +65,7 @@ echo "scene 1, the homepage"
 cut "$SRC/homepage.mov" 0.0 14.2 "$CROP_HOME" s1
 
 echo "scene 2, registry health (the clip is shorter than the line, so the end holds)"
-freeze "$SRC/stats.mov" 3.0 22.17 34.8 "$CROP_HOME" s2
+freeze "$SRC/stats.mov" 3.0 22.17 38.2 "$CROP_HOME" s2
 
 echo "scene 3, agent 137"
 cut "$SRC/agent 137.mov" 12.0 38.2 "$CROP_WIDE" s3
