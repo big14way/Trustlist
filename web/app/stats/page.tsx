@@ -218,27 +218,6 @@ export default async function StatsPage() {
         </p>
       </section>
 
-      <section className="mt-12">
-        <p className="eyebrow text-dormant">WHAT WE CANNOT CLAIM</p>
-        <p className="mt-3 max-w-2xl text-sm text-ink/80">
-          We measure reachability from one place, so an endpoint that answers
-          elsewhere but not to us reads as down. We cannot see inside an agent
-          to know whether it does its job well; a live endpoint and an
-          independent review are evidence, not a guarantee. Our reviewer
-          weighting catches operators who fund their reviewers from one wallet
-          and who rate the same agents together, and it would miss a patient
-          operator who funded each address separately.
-        </p>
-        <p className="mt-3 max-w-2xl text-sm text-ink/80">
-          For corroboration from outside this project, arXiv:2606.26028 version
-          2 studied the same registries through 13 May 2026 and reported that 4
-          percent of BSC registrations exposed a live service endpoint and that
-          59.2 percent of BSC reviewers showed coordinated behaviour. Those are
-          their numbers on their data window, not ours. Our figures above are
-          measured today and are our own.
-        </p>
-      </section>
-
       <p className="font-data mt-12 text-xs text-dormant">
         indexed to block {stats.indexed_to_block?.toLocaleString() ?? "n/a"} ·
         scored {stats.computed_at?.slice(0, 16).replace("T", " ")}Z

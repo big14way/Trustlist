@@ -1,0 +1,10 @@
+# Local build output and test artefacts. Vercel builds from source; without
+# this list the CLI uploads three quarters of a gigabyte of .next directories
+# and stalls.
+.next
+.next-prod
+.next-verify
+.next-e2e
+node_modules
+test-results
+playwright-report
