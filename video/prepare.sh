@@ -94,10 +94,15 @@ ffmpeg -v error -y -ss 4.0 -t 35.2 -i "$SRC/methodology.mov" -an \
   -movflags +faststart "$OUT/s8.mp4"
 echo "  s8  <- methodology.mov @ 4.0s, 35.2s at double speed"
 
-echo "scene 9, the hosted site, the repository, the homepage"
-cut "$SRC/hosted site.mov" 20.0 6.0 "$CROP_STD" s9a
+echo "scene 9, the hosted site, the repository, the hosted site again"
+# The first hosted site recording was made while the database sync was mid
+# copy and showed an empty marketplace, so the homepage shots come from a
+# retake made once the listing was fixed. The repository shot is unchanged.
+HOSTED="$SRC/hosted hompage.mov"
+[ -f "$HOSTED" ] || HOSTED="$SRC/hosted homepage.mov"
+cut "$HOSTED" 0.5 6.0 "$CROP_STD" s9a
 cut "$SRC/hosted site.mov" 36.0 5.0 "$CROP_STD" s9b
-cut "$SRC/hosted site.mov" 56.0 6.0 "$CROP_STD" s9c
+cut "$HOSTED" 9.0 6.0 "$CROP_STD" s9c
 
 echo
 echo "durations as cut:"
