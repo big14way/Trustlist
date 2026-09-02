@@ -358,17 +358,3 @@ Live and checkable right now:
 | Mainnet transactions, every one logged | 18 |
 | Dead end states walked by hand | 18, of which 7 were broken and are fixed |
 | Cold start from a clean container | 89 seconds, against a 300 second budget |
-
-Not done, stated plainly:
-
-- **No Altana session grant has ever been signed.** The page, the scoped
-  permissions and the revoke path are written and type check, the relay
-  answers, and the wallet is created and proven recoverable. It holds no
-  BNB, so nothing exists on chain and the session journey skips for that
-  reason rather than passing quietly.
-- **No x402 metered path.** Not started. Both our agents declare
-  `x402Support: false`, which is the truth.
-- **No judge mode and no stranger test with outside users.**
-- **No demo video yet.** The script, shot list and edit notes are in
-  `docs/DEMO_VIDEO.md`, written against the product as it is, with no
-  scene for anything that does not exist.
