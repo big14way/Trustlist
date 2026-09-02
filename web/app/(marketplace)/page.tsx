@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { CollapseCounter } from "@/components/CollapseCounter";
 import { HireButton } from "@/components/HireButton";
 import { ProbeStrip } from "@/components/ProbeStrip";
@@ -87,8 +88,9 @@ const CATEGORIES = [
 
 // The marketplace has exactly two filters, and both the rail and the empty
 // state need to build links out of them.
-function href(c: string, d: boolean): string {
+function href(c: string, d: boolean, q = ""): string {
   const p = new URLSearchParams();
+  if (q) p.set("q", q);
   if (c) p.set("category", c);
   if (d) p.set("dormant", "1");
   const qs = p.toString();
@@ -100,10 +102,13 @@ function FilterRail({
   showDormant,
   dormantCount,
   counts,
+  q,
 }: {
   category: string;
   showDormant: boolean;
   dormantCount: number;
+  /// The current search text, so the chips keep it and the box shows it.
+  q: string;
   /// Answering agents per category, measured, not asserted. Showing the
   /// number next to each chip is the difference between claiming coverage
   /// and demonstrating it, and it is honest about the thin ones: grid
@@ -112,11 +117,43 @@ function FilterRail({
 }) {
   return (
     <div className="mt-6">
+      <form
+        action="/"
+        method="get"
+        role="search"
+        className="mb-4 flex max-w-xl gap-2"
+      >
+        {category ? (
+          <input type="hidden" name="category" value={category} />
+        ) : null}
+        <input
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="Search by name, or type an agent id"
+          aria-label="Search agents"
+          className="w-full rounded border border-dormant/50 bg-paper px-3 py-1.5 text-sm placeholder:text-dormant focus:border-ink"
+        />
+        <button
+          type="submit"
+          className="eyebrow rounded border border-ink bg-ink px-3 py-1.5 text-paper hover:opacity-90"
+        >
+          Search
+        </button>
+        {q ? (
+          <a
+            href={href(category, showDormant)}
+            className="eyebrow self-center whitespace-nowrap text-ink/70 underline hover:text-ink"
+          >
+            Clear
+          </a>
+        ) : null}
+      </form>
       <ul className="flex flex-wrap gap-2">
         {CATEGORIES.map((c) => (
           <li key={c.id}>
             <a
-              href={href(c.id, showDormant)}
+              href={href(c.id, showDormant, q)}
               className={`inline-block rounded border px-3 py-1 text-sm ${
                 category === c.id
                   ? "border-ink bg-ink text-paper"
@@ -135,7 +172,7 @@ function FilterRail({
       </ul>
       <p className="mt-3 text-xs">
         <a
-          href={href(category, !showDormant)}
+          href={href(category, !showDormant, q)}
           className="underline text-ink/70 hover:text-ink"
         >
           {showDormant
@@ -150,20 +187,24 @@ function FilterRail({
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; dormant?: string }>;
+  searchParams: Promise<{ category?: string; dormant?: string; q?: string }>;
 }) {
   const sp = await searchParams;
   const category = sp.category ?? "";
   const showDormant = sp.dormant === "1";
+  const q = (sp.q ?? "").trim().slice(0, 80);
+  // An agent id is not a name to search for, it is an address to go to.
+  if (/^\d+$/.test(q)) redirect(`/agents/${q}`);
 
   const stats = await fetchStats();
   // Default marketplace filter: only agents whose status is earned by
   // enough probes appear. The measuring majority is a count, not a listing.
-  const query = new URLSearchParams({
-    sort: "rank",
-    limit: "24",
-    status: showDormant ? "down,dormant" : "live,flaky",
-  });
+  const query = new URLSearchParams({ sort: "rank", limit: "24" });
+  // A search spans every status: someone looking for an agent by name
+  // wants to find it and read its status, not have it hidden for being
+  // down. The status pill on the card says which it is.
+  if (q) query.set("q", q);
+  else query.set("status", showDormant ? "down,dormant" : "live,flaky");
   if (category) query.set("category", category);
   const agents = await fetchAgents(query);
   const uptime =
@@ -238,13 +279,16 @@ export default async function Home({
         showDormant={showDormant}
         dormantCount={dormantCount}
         counts={stats?.categories ?? {}}
+        q={q}
       />
 
       <section aria-label="Agents" className="mt-8">
         <p className="eyebrow text-dormant">
-          {showDormant
-            ? "AGENTS THAT DO NOT ANSWER, OR HAVE NOT BEEN MEASURED ENOUGH YET"
-            : "AGENTS THAT ANSWER, RANKED"}
+          {q
+            ? `AGENTS MATCHING "${q}", ANY STATUS, RANKED`
+            : showDormant
+              ? "AGENTS THAT DO NOT ANSWER, OR HAVE NOT BEEN MEASURED ENOUGH YET"
+              : "AGENTS THAT ANSWER, RANKED"}
           {category ? ` · ${category.toUpperCase()}` : ""}
         </p>
         {agents && agents.items.length > 0 ? (
@@ -256,16 +300,26 @@ export default async function Home({
         ) : (
           <div data-testid="empty-state" className="mt-4 max-w-xl">
             <p className="text-sm text-ink/70">
-              {category
+              {q
+                ? `No agent's name or description matches "${q}".`
+                : category
                 ? "No agent in this category is answering right now."
                 : showDormant
                   ? "Every agent we have measured is answering, so there is nothing in this view."
                   : "Nothing to show yet. The prober is still measuring."}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
+              {q ? (
+                <a
+                  href={href(category, showDormant)}
+                  className="rounded bg-ink px-3 py-1.5 text-sm text-paper hover:opacity-90"
+                >
+                  Clear the search
+                </a>
+              ) : null}
               {category ? (
                 <a
-                  href={href("", showDormant)}
+                  href={href("", showDormant, q)}
                   className="rounded bg-ink px-3 py-1.5 text-sm text-paper hover:opacity-90"
                 >
                   Show every category
