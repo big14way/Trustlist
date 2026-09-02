@@ -268,6 +268,13 @@ async fn one_pass(pool: &PgPool) -> anyhow::Result<()> {
             failures.push(format!("probe rollups: {e}"));
         }
     }
+    match refresh_latest(pool).await {
+        Ok(rows) => tracing::info!(rows, "latest scores rebuilt"),
+        Err(e) => {
+            tracing::error!(%e, "latest score rebuild failed");
+            failures.push(format!("latest scores: {e}"));
+        }
+    }
     match refresh_stats(pool).await {
         Ok(()) => tracing::info!("registry snapshot refreshed"),
         Err(e) => {
@@ -436,6 +443,27 @@ async fn refresh_stats(pool: &PgPool) -> anyhow::Result<()> {
 ///
 /// One transaction, so a reader never sees a half-filled strip: either the
 /// previous rollup or the new one, never a truncated table mid-rebuild.
+/// One row per agent, its newest score, in a table the API joins directly.
+/// Rebuilt in one transaction so a reader never sees it half full. History
+/// stays in agent_scores untouched; this is the answer to "what is the
+/// latest", precomputed, the same way the probe rollups are.
+async fn refresh_latest(pool: &PgPool) -> anyhow::Result<u64> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("truncate agent_latest")
+        .execute(&mut *tx)
+        .await?;
+    let rows = sqlx::query(
+        "insert into agent_latest
+         select distinct on (agent_id) * from agent_scores
+         order by agent_id, computed_at desc",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    tx.commit().await?;
+    Ok(rows)
+}
+
 async fn refresh_rollups(pool: &PgPool) -> anyhow::Result<u64> {
     let mut tx = pool.begin().await?;
     sqlx::query("truncate probe_observer_outage")

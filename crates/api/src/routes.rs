@@ -40,12 +40,12 @@ const STATUS_SQL: &str = "coalesce(sc.status, case
     else 'dormant'
   end)";
 
-/// Latest score row per agent, joined laterally.
-const SCORE_JOIN: &str = "left join lateral (
-    select * from agent_scores x
-    where x.agent_id = a.agent_id
-    order by computed_at desc limit 1
-  ) sc on true";
+/// Newest score per agent. agent_latest holds exactly one row per scored
+/// agent and is rebuilt by the trust engine after every pass, so this is a
+/// plain join rather than a lateral probe into 27 million rows of history.
+/// The lateral form cost 17 seconds on the hosted database and left the
+/// public marketplace empty behind the web app's 8 second timeout.
+const SCORE_JOIN: &str = "left join agent_latest sc on sc.agent_id = a.agent_id";
 
 fn agent_row_to_json(row: &sqlx::postgres::PgRow) -> serde_json::Value {
     let owner: Vec<u8> = row.get("owner");
@@ -254,11 +254,10 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
     // which is the same bar the default listing uses.
     let category_rows = sqlx::query(
         "select c as category, count(*)::bigint as answering
-           from agent_scores s
+           from agent_latest s
            join agents a on a.agent_id = s.agent_id
            cross join lateral unnest(a.categories) as c
-          where s.computed_at = (select max(computed_at) from agent_scores)
-            and s.status in ('live', 'flaky')
+          where s.status in ('live', 'flaky')
           group by c",
     )
     .fetch_all(&state.pool)
