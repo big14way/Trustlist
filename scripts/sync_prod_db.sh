@@ -21,7 +21,11 @@
 # Nothing is invented and nothing is rounded. This is the same data, with
 # history the site never reads left behind.
 #
-# Usage: scripts/sync_prod_db.sh [--yes]
+# Usage: scripts/sync_prod_db.sh [--yes] [--only table,table]
+#
+# --only recopies just the named small tables, in foreign key order, and
+# leaves agents, scores and rollups alone. It exists for repairing a run
+# that stopped partway, which is cheaper than the full twenty minutes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -30,9 +34,11 @@ source scripts/env.sh
 load_env_files
 
 ASSUME_YES=0
+ONLY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes) ASSUME_YES=1; shift ;;
+    --only) ONLY=$2; shift 2 ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 1 ;;
   esac
@@ -106,6 +112,9 @@ if [ "$ASSUME_YES" != "1" ]; then
   case "$a" in y|Y|yes|YES) ;; *) echo "nothing was copied"; exit 1 ;; esac
 fi
 
+if [ -n "$ONLY" ]; then
+  say "only: $ONLY (agents, scores and rollups left as they are)"
+else
 # Order matters: agents first, everything else references it.
 say "agents"
 pipe "pg_dump -U trustlist -d trustlist -t agents --data-only --no-owner \
@@ -140,6 +149,7 @@ echo "  copied $(rpsql -tAc 'select count(*) from agent_scores')"
 say "probe history"
 rpsql -q -c "truncate probe_results"
 echo "  raw probes left behind, the rollups carry the same answers"
+fi
 
 say "trust, snapshots and indexer state"
 # registry_stats is the one the homepage reads for every headline number,
@@ -163,6 +173,9 @@ SMALL_TABLES=$(lpsql -tAc "
         and c.confrelid = ('public.' || t.table_name)::regclass
     ) desc, t.table_name")
 for t in $SMALL_TABLES; do
+  if [ -n "$ONLY" ]; then
+    case ",$ONLY," in *",$t,"*) ;; *) continue ;; esac
+  fi
   if lpsql -tAc "select to_regclass('public.$t')" | grep -q "$t"; then
     rpsql -q -c "truncate $t cascade" 2>/dev/null || true
     pipe "pg_dump -U trustlist -d trustlist -t $t --data-only --no-owner | psql '$PROD_DATABASE_URL' -v ON_ERROR_STOP=1 -q"
