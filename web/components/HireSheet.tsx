@@ -135,7 +135,13 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
   // Escape closes the sheet, which is what anyone who has used a dialog
   // expects. It is deliberately refused while a transaction is in flight:
   // closing then would lose the hash the user needs to follow it.
-  const canDismiss = step === "form" || step === "done";
+  // Except when the chain does not know the transaction the wallet said it
+  // sent. Waiting on that would trap the sheet forever, and it did once:
+  // a hire the wallet reported as sent, that no node ever held, restored
+  // on every open and blocking every attempt after it.
+  const [dropped, setDropped] = useState(false);
+  const [waitedLong, setWaitedLong] = useState(false);
+  const canDismiss = step === "form" || step === "done" || dropped;
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && canDismiss) onClose();
@@ -148,6 +154,50 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
   useEffect(() => {
     if (receipt.isSuccess) setStep("done");
   }, [receipt.isSuccess]);
+
+  // Ask the chain directly whether it has the transaction at all. A wallet
+  // returns a hash the moment it signs, and a node can still refuse or drop
+  // the broadcast; then no receipt will ever come. Four misses twenty
+  // seconds apart is far past BSC's block time, so after that the honest
+  // state is "dropped", not "waiting".
+  useEffect(() => {
+    if (!hireHash || receipt.isSuccess || !publicClient) return;
+    let misses = 0;
+    let cancelled = false;
+    const started = Date.now();
+    const timer = setInterval(async () => {
+      try {
+        await publicClient.getTransaction({ hash: hireHash });
+        misses = 0;
+      } catch {
+        misses += 1;
+      }
+      if (cancelled) return;
+      if (misses >= 4) setDropped(true);
+      if (Date.now() - started > 45_000) setWaitedLong(true);
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [hireHash, receipt.isSuccess, publicClient]);
+
+  useEffect(() => {
+    if (receipt.isError) setDropped(true);
+  }, [receipt.isError]);
+
+  function startOver() {
+    try {
+      localStorage.removeItem(`trustlist:hire:${agentId}`);
+    } catch {
+      // Storage may be unavailable; the in memory reset below still works.
+    }
+    setHireHash(undefined);
+    setDropped(false);
+    setWaitedLong(false);
+    setErrorText(null);
+    setStep("form");
+  }
 
   // Persist the intent before sending so a refresh mid flow can recover it.
   useEffect(() => {
@@ -526,8 +576,29 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                         : `Hire for ${budgetText} ${tokenSymbol}`}
                 </button>
               )}
-              {hireHash ? (
-                <p className="font-data mt-3 text-xs break-all text-ink/70">
+              {hireHash && dropped ? (
+                <div className="mt-3 rounded border border-flag/60 p-3 text-xs">
+                  <p className="text-ink/80">
+                    Your wallet reported this transaction as sent, but no node
+                    on the chain has it, so it was dropped before it was
+                    mined. Nothing was hired and nothing was taken. If your
+                    wallet still shows it as pending, clear that from the
+                    wallet before trying again, or it will hold up the next
+                    one.
+                  </p>
+                  <p className="font-data mt-2 break-all text-ink/60">
+                    {hireHash}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={startOver}
+                    className="eyebrow mt-3 rounded border border-ink bg-ink px-3 py-1.5 text-paper hover:opacity-90"
+                  >
+                    Start over
+                  </button>
+                </div>
+              ) : hireHash ? (
+                <div className="font-data mt-3 text-xs break-all text-ink/70">
                   sent, waiting for confirmation:{" "}
                   <a
                     className="underline"
@@ -537,7 +608,20 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
                   >
                     {hireHash.slice(0, 22)}…
                   </a>
-                </p>
+                  {waitedLong ? (
+                    <p className="mt-2 text-ink/70">
+                      This is taking longer than a block should. The chain
+                      still has the transaction, so it may yet confirm.{" "}
+                      <button
+                        type="button"
+                        onClick={startOver}
+                        className="underline"
+                      >
+                        Stop waiting and start over
+                      </button>
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
               <p className="mt-3 text-xs text-ink/60">
                 We ask your wallet to approve the exact budget and nothing more.
