@@ -328,38 +328,51 @@ Anyone can list three hundred thousand agents. TrustList tells you which seven t
 
 ---
 
-## 5. Remotion notes
+## 5. The edit, in `video/`
 
-One composition, 2560 by 1440, 30 frames per second, about 5,550 frames.
-Nine scenes, each a `<Sequence>` whose length matches the shot list.
-Import the screen recording once and cut it with `startFrom` per scene
-rather than exporting nine clips.
+The composition is a Remotion project in `video/`, and the cut is data.
 
-| scene | frames | overlay |
-|---|---|---|
-| 1 | 0 to 360 | none. Let the counter do the work. |
-| 2 | 360 to 1050 | lower third at 2:00 into the scene: "13 wallets. 13,103 reviews. 44 percent." |
-| 3 | 1050 to 1950 | two small labels when the panel is on screen: "what the registry says: 96.8" and "what we count: 90.4". Fade in with the voice. |
-| 4 | 1950 to 2850 | when the hash appears, a lower third with the full hire transaction hash in a monospace face, held at least 30 frames after the voice finishes. |
-| 5 | 2850 to 3600 | lower third with the settle transaction hash while BscScan is up. Same rule: at least a full second readable. |
-| 6 | 3600 to 4200 | two labels: "real score: verified" and "inflated score: rejected". |
-| 7 | 4200 to 4800 | lower third: "jobs 56676, 56677, 56678, mainnet". |
-| 8 | 4800 to 5160 | none. |
-| 9 | 5160 to 5550 | end card, last 90 frames: "trustlistapp.vercel.app" and "github.com/big14way/Trustlist". No logo animation. |
+```
+cd video
+npm install
+bash prepare.sh        # cuts the Desktop recordings into public/clips
+npm run render         # out/trustlist-demo.mp4, 2560 by 1440, 30 fps
+```
 
-Rules for the edit, all from SPEC section 24:
+`prepare.sh` expects the recordings on the Desktop under the names used on
+the day (`homepage.mov`, `stats.mov`, `agent 137.mov`, `Yield Scout.mov`,
+`split.mov`, `second agent 137 scene 6.mov`, `docs.mov`, `methodology.mov`,
+`hosted site.mov`) and the VoiceBox files copied to `public/audio/scene1.wav`
+to `scene9.wav`. Set `TRUSTLIST_RECORDINGS` to point somewhere else.
 
-- No intro, no logo, no stock music. If there is a bed at all, keep it
-  under the voice by at least 20 dB and cut it entirely for scenes 4 and 5.
-- Every transaction hash shown on screen stays readable for one full second
-  minimum. The overlays exist because the sheet's own hash is small.
-- Cuts land on the voice, not before it. Start each scene's footage two or
-  three frames before the first word of its line.
-- Do not speed up the MetaMask confirmations. The wait is the proof that
-  a chain is involved.
-- Do not add a caption saying "mainnet" anywhere it is not literally true.
-  Scenes 4, 5, 6, and 7 are mainnet. Scene 2's numbers are from our own
-  index of mainnet. That is all of them.
+What the script does, and why:
+
+- Crops the macOS menu bar and the browser chrome off using pixel positions
+  measured from the frames (page content starts at y=228 in every clip), then
+  takes a 16 by 9 box and scales it to 2560 by 1440. The split shot in scene
+  5 keeps both the browser and the editor.
+- The recordings are variable frame rate: macOS writes a frame only when the
+  screen changes, so a segment over a still page holds a handful of frames.
+  Every segment is padded from its last frame and capped at the exact length
+  `src/timeline.ts` declares, so the timeline is always true.
+- Scene 2's clip is shorter than its line, so its last frame holds. Scene 8
+  scrolls at twice the recorded pace, which SPEC 24 allows; the MetaMask
+  confirmations in scenes 4 and 5 are never sped up.
+
+`src/timeline.ts` lists each scene's segments, voice file and overlays, with
+the real transaction hashes for job 56686 read back from the chain. The
+overlays use the site's own fonts and colours, and every hash stays on screen
+for more than a second. Change a cut by editing the seconds there and in
+`prepare.sh`, and rerun both.
+
+Two things the first assembly taught:
+
+- **Start the recording before the page loads.** The homepage counter runs
+  once per browser session in the first second after load. A take that
+  starts on a loaded page never shows it. Start the screen recording, then
+  load `localhost:3000` in a new private window.
+- **Record the hosted site only when the sync has finished.** A take made
+  while `sync_prod_db.sh` was mid copy showed an empty marketplace.
 
 ## 6. If the live hire cannot be recorded
 
