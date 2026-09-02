@@ -4,7 +4,7 @@
 
 An ERC-8004 agent marketplace for BNB Smart Chain that tells you which agents are actually alive, which reviews are worth believing, and lets you hire through ERC-8183 escrow.
 
-Built for the BNB Chain "Build the Era" hackathon. `docs/VERIFICATION.md` records what was checked against live sources before any code was written.
+Built for the BNB Chain "Build the Era" hackathon.
 
 ## The problem
 
@@ -338,7 +338,7 @@ contracts/        HireRail, TrustSnapshot, and their tests
 web/              Next.js app, wagmi and viem, Playwright journeys
 agents/           two read-only PancakeSwap agents we built and probe like any other
 scripts/          the gate, the seed, the dev chain, the cold start test, the mainnet scripts
-docs/             verification log, methodology, submission notes, the mainnet runbook
+docs/             methodology, every address, the submission notes
 render.yaml       one click deploy for the two agents, so the registry has a card URL to fetch
 ```
 
