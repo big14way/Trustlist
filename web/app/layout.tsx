@@ -27,6 +27,11 @@ const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
 });
 
+// The footer reads the index status on every request, so no route can be
+// prerendered at build time. Saying so here keeps the build from trying and
+// logging a failed fetch for each page that used to be static.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "TrustList",
   description:

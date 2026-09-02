@@ -95,7 +95,12 @@ export async function apiGetResult<T>(path: string): Promise<Fetched<T>> {
       cache: "no-store",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (res.status === 404) return { ok: false, reason: "missing" };
+    // 404 is an id the registry does not have. 400 is an id that could not
+    // be one, such as letters in the path. Neither is a fact about our API
+    // being down, and telling the reader it was would be false.
+    if (res.status === 404 || res.status === 400) {
+      return { ok: false, reason: "missing" };
+    }
     if (!res.ok) {
       console.error(`API returned ${res.status} for ${path}`);
       return { ok: false, reason: "unreachable" };
