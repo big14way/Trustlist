@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { JobPanel } from "@/components/JobPanel";
+import { WalletButton } from "@/components/WalletButton";
 import { fetchJobs, type Job } from "@/lib/api";
 
 export default function JobsPage() {
@@ -43,10 +44,15 @@ export default function JobsPage() {
       <h1 className="font-display mt-3 text-4xl">My hires</h1>
 
       {!isConnected ? (
-        <p className="mt-4 max-w-xl text-sm text-ink/80">
-          Connect a wallet to see the jobs you have paid for. You can browse
-          every agent and every measurement on this site without one.
-        </p>
+        <div className="mt-4 max-w-xl">
+          <p className="text-sm text-ink/80">
+            Connect a wallet to see the jobs you have paid for. You can browse
+            every agent and every measurement on this site without one.
+          </p>
+          <div className="mt-3">
+            <WalletButton />
+          </div>
+        </div>
       ) : null}
 
       {loaded && isConnected && jobs !== null && jobs.length === 0 ? (

@@ -348,7 +348,7 @@ export default async function AgentDetail({
           <StatBlock
             label="JOBS"
             value={String(agent.jobs_completed)}
-            detail={`${agent.jobs_disputed} disputed. Hiring through our rail is being wired up now.`}
+            detail={`${agent.jobs_disputed} disputed. Counted from jobs hired through our rail on this chain.`}
           />
         </section>
 

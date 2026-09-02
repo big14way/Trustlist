@@ -6,6 +6,8 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
 
 const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
@@ -39,7 +41,11 @@ export default function RootLayout({
       <body
         className={`${bricolage.variable} ${publicSans.variable} ${jetbrains.variable} antialiased`}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          <SiteHeader />
+          {children}
+          <SiteFooter />
+        </Providers>
       </body>
     </html>
   );
