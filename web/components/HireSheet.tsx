@@ -6,6 +6,7 @@ import {
   useAccount,
   useBalance,
   useConnect,
+  usePublicClient,
   useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
@@ -127,6 +128,7 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
   const noGas = nativeBalance !== undefined && nativeBalance.value === 0n;
 
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
   const [hireHash, setHireHash] = useState<`0x${string}` | undefined>();
   const chainTime = useChainTime();
 
@@ -217,12 +219,26 @@ export function HireSheet({ agentId, agentName, provider, onClose }: Props) {
       if (needsApproval) {
         setStep("approving");
         // Exact amount only. Never an unbounded allowance.
-        await writeContractAsync({
+        const approveHash = await writeContractAsync({
           abi: erc20Abi,
           address: PAYMENT_TOKEN as `0x${string}`,
           functionName: "approve",
           args: [HIRE_RAIL as `0x${string}`, budget],
         });
+        // The wallet resolves as soon as it has broadcast, not when the
+        // chain has the allowance. Sending the hire before this receipt
+        // made the wallet estimate gas against an allowance of zero, so the
+        // hire failed before it was ever broadcast. A dev chain mines in
+        // the same instant and never showed it; mainnet did, on camera.
+        if (!publicClient) throw new Error("No chain connection to wait on.");
+        const approved = await publicClient.waitForTransactionReceipt({
+          hash: approveHash,
+        });
+        if (approved.status !== "success") {
+          throw new Error(
+            "The approval was mined but reverted, so nothing was hired. Check the token and try again.",
+          );
+        }
         await refetchAllowance();
       }
       setStep("hiring");
