@@ -146,12 +146,22 @@ say "trust, snapshots and indexer state"
 # and leaving it out made the hosted site say "the prober has not completed
 # its first scoring pass" while holding 321,519 agents. The list is now
 # derived rather than typed, so a new table cannot be forgotten the same way.
+#
+# Parents before children. Alphabetical order put snapshot_leaves ahead of
+# snapshots, so the leaves of a snapshot the hosted side had not received
+# yet failed their foreign key and the whole run stopped there, with the
+# hosted leaves table already truncated. A table that another table
+# references by foreign key is copied first; the rest follow by name.
 SMALL_TABLES=$(lpsql -tAc "
-  select table_name from information_schema.tables
-  where table_schema = 'public'
-    and table_name not in ('agents','agent_scores','probe_results',
-                           '_sqlx_migrations','seed_agents')
-  order by table_name")
+  select t.table_name from information_schema.tables t
+  where t.table_schema = 'public'
+    and t.table_name not in ('agents','agent_scores','probe_results',
+                             '_sqlx_migrations','seed_agents')
+  order by exists (
+      select 1 from pg_constraint c
+      where c.contype = 'f'
+        and c.confrelid = ('public.' || t.table_name)::regclass
+    ) desc, t.table_name")
 for t in $SMALL_TABLES; do
   if lpsql -tAc "select to_regclass('public.$t')" | grep -q "$t"; then
     rpsql -q -c "truncate $t cascade" 2>/dev/null || true
