@@ -1,0 +1,7 @@
+node_modules/
+out/
+# Cut from the screen recordings on the Desktop by prepare.sh, several
+# hundred megabytes, rebuilt in a minute.
+public/clips/
+# Generated voice track, kept out of the repository with the recordings.
+public/audio/

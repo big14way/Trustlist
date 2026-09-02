@@ -31,6 +31,12 @@ sol! {
     event Settled(uint256 indexed jobId, address indexed caller);
 
     #[derive(Debug)]
+    event Accepted(uint256 indexed jobId, address indexed hirer, uint256 paid);
+
+    #[derive(Debug)]
+    event WorkRejected(uint256 indexed jobId, address indexed hirer, uint256 refunded);
+
+    #[derive(Debug)]
     event Reclaimed(uint256 indexed jobId, address indexed hirer, uint256 refunded);
 }
 
@@ -150,6 +156,28 @@ impl<P: Provider + Clone> JobFollower<P> {
                     "update jobs set settle_tx = $2, settled_at = $3 where job_id = $1::numeric",
                 )
                 .bind(ev.jobId.to_string())
+                .bind(tx.as_slice())
+                .bind(time)
+                .execute(&self.pool)
+                .await?;
+            } else if *topic0 == Accepted::SIGNATURE_HASH
+                || *topic0 == WorkRejected::SIGNATURE_HASH
+            {
+                // Direct mode settles through Accepted or WorkRejected rather
+                // than Settled, and those were not recorded, so every direct
+                // job on the site was missing its settle link while the
+                // kernel reported it complete. The state itself still comes
+                // from the kernel in reconcile; this only records which
+                // transaction did it.
+                let job_id = if *topic0 == Accepted::SIGNATURE_HASH {
+                    log.log_decode::<Accepted>()?.inner.data.jobId
+                } else {
+                    log.log_decode::<WorkRejected>()?.inner.data.jobId
+                };
+                sqlx::query(
+                    "update jobs set settle_tx = $2, settled_at = $3 where job_id = $1::numeric",
+                )
+                .bind(job_id.to_string())
                 .bind(tx.as_slice())
                 .bind(time)
                 .execute(&self.pool)
