@@ -278,20 +278,16 @@ pub async fn stats(State(state): State<AppState>) -> Result<impl IntoResponse, S
     // marketplace has to be able to show its coverage rather than assert it.
     // These are counts of agents whose status was earned by enough probes,
     // which is the same bar the default listing uses.
-    let category_rows = sqlx::query(
-        "select c as category, count(*)::bigint as answering
-           from agent_latest s
-           join agents a on a.agent_id = s.agent_id
-           cross join lateral unnest(a.categories) as c
-          where s.status in ('live', 'flaky')
-          group by c",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(%e, "category counts failed");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    // Precomputed by the trust engine with agent_latest. Counting them here
+    // meant one agents lookup per scored agent on every request, which was
+    // three seconds on the hosted database.
+    let category_rows = sqlx::query("select category, answering from category_answering")
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(%e, "category counts failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let mut categories = serde_json::Map::new();
     for r in &category_rows {
         categories.insert(

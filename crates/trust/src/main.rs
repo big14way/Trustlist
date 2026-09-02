@@ -460,6 +460,23 @@ async fn refresh_latest(pool: &PgPool) -> anyhow::Result<u64> {
     .execute(&mut *tx)
     .await?
     .rows_affected();
+    // The per category counts the marketplace's filter chips show, from the
+    // same rows, in the same transaction, so the chips and the listing can
+    // never disagree about what was scored.
+    sqlx::query("truncate category_answering")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "insert into category_answering (category, answering)
+         select c, count(*)
+         from agent_latest s
+         join agents a on a.agent_id = s.agent_id
+         cross join lateral unnest(a.categories) as c
+         where s.status in ('live', 'flaky')
+         group by c",
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(rows)
 }
