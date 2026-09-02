@@ -26,6 +26,7 @@ CROP_HOME="2956:1663:44:228"      # homepage.mov, stats.mov: window x 44..2999
 CROP_WIDE="3000:1687:10:228"      # agent 137.mov, Yield Scout.mov: x 10..3009
 CROP_STD="2988:1681:10:228"       # scene 6, docs, methodology, hosted site: x 10..2997
 CROP_SPLIT="3009:1693:10:228"     # split.mov: browser and editor side by side, x 10..3018
+CROP_FULL="2984:1678:4:228"       # hosted hompage.mov: window edge to the scrollbar, x 4..2987
 
 # The recordings are variable frame rate: macOS writes a frame only when
 # something on screen changes, so a segment over a still page holds very few
@@ -98,11 +99,12 @@ echo "scene 9, the hosted site, the repository, the hosted site again"
 # The first hosted site recording was made while the database sync was mid
 # copy and showed an empty marketplace, so the homepage shots come from a
 # retake made once the listing was fixed. The repository shot is unchanged.
+# The retake starts before the page has finished loading, so its first
+# second carries the counter collapsing on the live site.
 HOSTED="$SRC/hosted hompage.mov"
-[ -f "$HOSTED" ] || HOSTED="$SRC/hosted homepage.mov"
-cut "$HOSTED" 0.5 6.0 "$CROP_STD" s9a
+cut "$HOSTED" 0.0 6.0 "$CROP_FULL" s9a
 cut "$SRC/hosted site.mov" 36.0 5.0 "$CROP_STD" s9b
-cut "$HOSTED" 9.0 6.0 "$CROP_STD" s9c
+cut "$HOSTED" 30.0 6.0 "$CROP_FULL" s9c
 
 echo
 echo "durations as cut:"
